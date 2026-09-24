@@ -112,6 +112,9 @@
         </div>
       </el-footer>
       <!-- 底栏容器END -->
+
+      <!-- AI 智能客服悬浮挂件 -->
+      <AiChat></AiChat>
     </el-container>
   </div>
 </template>
@@ -119,8 +122,10 @@
 <script>
 import { mapActions } from "vuex";
 import { mapGetters } from "vuex";
+import AiChat from "./components/AiChat.vue";
 
 export default {
+  components: { AiChat },
   beforeUpdate() {
     this.activeIndex = this.$route.path;
   },

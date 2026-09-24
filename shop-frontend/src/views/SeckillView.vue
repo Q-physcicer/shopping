@@ -202,7 +202,6 @@ export default {
         //   const cate = res.data.data;
         //   cate.unshift(val);
           this.timeList = res.data.data;
-          console.log(this.timeList[0].timeId)
           this.$axios
           .get("/api/seckill/product/time/" + this.timeList[0].timeId)
           .then(res => {

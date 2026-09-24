@@ -140,11 +140,9 @@ export default {
           });
           // 将处理后的数据设置进 vuex
           this.setShoppingCart(formattedData);
-        } else {
-          console.error('获取购物车数据失败:', res.data.msg);
         }
-      }).catch(err => {
-        console.error('获取购物车失败', err);
+      }).catch(() => {
+        this.$message.error('获取购物车失败，请稍后重试');
       });
     },
     // 修改商品数量的时候调用该函数

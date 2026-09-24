@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.mall.xiaomi.mapper.SeckillMessageRecordMapper">
-  <resultMap id="BaseResultMap" type="com.mall.xiaomi.pojo.SeckillMessageRecord">
+<mapper namespace="com.shopping.mapper.SeckillMessageRecordMapper">
+  <resultMap id="BaseResultMap" type="com.shopping.pojo.SeckillMessageRecord">
     <id column="id" jdbcType="BIGINT" property="id" />
     <result column="message_id" jdbcType="VARCHAR" property="messageId" />
     <result column="user_id" jdbcType="VARCHAR" property="userId" />
@@ -22,7 +22,7 @@
     from seckill_message_record
     where id = #{id,jdbcType=BIGINT}
   </select>
-  <select id="findByMessageId" resultType="com.mall.xiaomi.pojo.SeckillMessageRecord">
+  <select id="findByMessageId" resultType="com.shopping.pojo.SeckillMessageRecord">
     select
     <include refid="Base_Column_List" />
     from seckill_message_record
@@ -32,7 +32,7 @@
     delete from seckill_message_record
     where id = #{id,jdbcType=BIGINT}
   </delete>
-  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="com.mall.xiaomi.pojo.SeckillMessageRecord" useGeneratedKeys="true">
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="com.shopping.pojo.SeckillMessageRecord" useGeneratedKeys="true">
     insert into seckill_message_record (message_id, user_id, seckill_id,
       `status`, retry_count, error_message,
       created_at, updated_at)
@@ -40,7 +40,7 @@
       #{status,jdbcType=VARCHAR}, #{retryCount,jdbcType=INTEGER}, #{errorMessage,jdbcType=VARCHAR},
       #{createdAt,jdbcType=TIMESTAMP}, #{updatedAt,jdbcType=TIMESTAMP})
   </insert>
-  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="com.mall.xiaomi.pojo.SeckillMessageRecord" useGeneratedKeys="true">
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="com.shopping.pojo.SeckillMessageRecord" useGeneratedKeys="true">
     insert into seckill_message_record
     <trim prefix="(" suffix=")" suffixOverrides=",">
       <if test="messageId != null">
@@ -95,7 +95,7 @@
       </if>
     </trim>
   </insert>
-  <update id="updateByPrimaryKeySelective" parameterType="com.mall.xiaomi.pojo.SeckillMessageRecord">
+  <update id="updateByPrimaryKeySelective" parameterType="com.shopping.pojo.SeckillMessageRecord">
     update seckill_message_record
     <set>
       <if test="messageId != null">
@@ -125,7 +125,7 @@
     </set>
     where id = #{id,jdbcType=BIGINT}
   </update>
-  <update id="updateByPrimaryKey" parameterType="com.mall.xiaomi.pojo.SeckillMessageRecord">
+  <update id="updateByPrimaryKey" parameterType="com.shopping.pojo.SeckillMessageRecord">
     update seckill_message_record
     set message_id = #{messageId,jdbcType=VARCHAR},
       user_id = #{userId,jdbcType=VARCHAR},
@@ -137,7 +137,7 @@
       updated_at = #{updatedAt,jdbcType=TIMESTAMP}
     where id = #{id,jdbcType=BIGINT}
   </update>
-  <update id="updateByMessageId" parameterType="com.mall.xiaomi.pojo.SeckillMessageRecord">
+  <update id="updateByMessageId" parameterType="com.shopping.pojo.SeckillMessageRecord">
     update seckill_message_record
     set `status` = #{record.status,jdbcType=VARCHAR},
         retry_count = #{record.retryCount,jdbcType=INTEGER},
