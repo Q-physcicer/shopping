@@ -1,0 +1,2 @@
+"use strict";(self["webpackChunkshopmanagement"]=self["webpackChunkshopmanagement"]||[]).push([[895],{895:function(n,t,s){s.r(t),s.d(t,{default:function(){return i}});var e=function(){var n=this;n._self._c;return n._m(0)},a=[function(){var n=this,t=n._self._c;return t("div",{staticClass:"error"},[t("div",{staticClass:"main"})])}],r=s(1656),u={},l=(0,r.A)(u,e,a,!1,null,null,null),i=l.exports}}]);
+//# sourceMappingURL=895.47eb5b61.js.map
