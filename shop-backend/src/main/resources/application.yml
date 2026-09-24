@@ -2,10 +2,14 @@ server:
   port: 3000
 spring.mvc.async.request-timeout: 180000  # SSE 流式响应超时（ms）
 spring:
+  # 默认激活 local profile：敏感配置（数据库密码、模型密钥）在 application-local.yml 中，
+  # 该文件不入库；新环境请复制 application-local.template.yml 为 application-local.yml 并填值
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
   datasource:
-    url: jdbc:mysql://localhost:3306/shopmanagement
-    username: root
-    password: shuozhi123456
+    url: ${DB_URL:jdbc:mysql://localhost:3306/shopmanagement}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}   # 本地开发请复制模板为 application-local.yml 填写真实密码
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:

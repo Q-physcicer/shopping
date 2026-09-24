@@ -46,3 +46,10 @@ nbdist/
 !*/build/*.html
 !*/build/*.xml
 .DS_Store
+
+######################################################################
+# 本地敏感配置（不入库）
+**/application-local.yml
+application-local.yml
+.env*
+*.env.local
