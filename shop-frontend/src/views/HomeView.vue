@@ -94,7 +94,7 @@ export default {
     return {
       carousel: "", // 轮播图数据
       phoneList: "", // 手机商品列表
-      miTvList: "", // 小米电视商品列表
+      miTvList: "", // 电视商品列表
       // applianceList: "", // 家电商品列表
       // applianceHotList: "", //热门家电商品列表
       accessoryList: "", //配件商品列表

@@ -186,7 +186,7 @@ export default {
 /* 头部CSS */
 .confirmOrder .confirmOrder-header {
   background-color: #fff;
-  border-bottom: 2px solid #ff6700;
+  border-bottom: 2px solid #5b6ef5;
   margin-bottom: 20px;
 }
 .confirmOrder .confirmOrder-header .header-content {
@@ -203,7 +203,7 @@ export default {
 }
 .confirmOrder .confirmOrder-header .header-content p i {
   font-size: 45px;
-  color: #ff6700;
+  color: #5b6ef5;
   line-height: 80px;
 }
 /* 头部CSS END */
@@ -238,7 +238,7 @@ export default {
   margin-bottom: 24px;
 }
 .confirmOrder .content .address-body .in-section {
-  border: 1px solid #ff6700;
+  border: 1px solid #5b6ef5;
 }
 .confirmOrder .content .address-body li h2 {
   font-size: 18px;
@@ -315,7 +315,7 @@ export default {
   float: left;
   width: 190px;
   text-align: center;
-  color: #ff6700;
+  color: #5b6ef5;
   line-height: 30px;
 }
 /* 商品及优惠券CSS END */
@@ -338,7 +338,7 @@ export default {
   float: left;
   line-height: 38px;
   font-size: 14px;
-  color: #ff6700;
+  color: #5b6ef5;
 }
 /* 配送方式CSS END */
 
@@ -361,7 +361,7 @@ export default {
   line-height: 38px;
   font-size: 14px;
   margin-right: 20px;
-  color: #ff6700;
+  color: #5b6ef5;
 }
 /* 发票CSS END */
 
@@ -389,7 +389,7 @@ export default {
   height: 30px;
   display: block;
   line-height: 30px;
-  color: #ff6700;
+  color: #5b6ef5;
 }
 .confirmOrder .content .section-count .money-box .total .title {
   padding-top: 15px;
@@ -426,8 +426,8 @@ export default {
   border-color: rgba(0, 0, 0, 0.27);
 }
 .confirmOrder .content .section-bar .btn .btn-primary {
-  background: #ff6700;
-  border-color: #ff6700;
+  background: #5b6ef5;
+  border-color: #5b6ef5;
   color: #fff;
 }
 /* 结算导航CSS */

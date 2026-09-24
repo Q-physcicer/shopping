@@ -44,12 +44,13 @@
           :default-active="activeIndex"
           class="el-menu-demo"
           mode="horizontal"
-          active-text-color="#409eff"
+          active-text-color="#5b6ef5"
           router
         >
           <div class="logo">
             <router-link to="/">
-              <img src="./assets/imgs/logo.png" alt />
+              <span class="logo-badge"><i class="el-icon-shopping-bag-1"></i></span>
+              <span class="logo-name">星选商城</span>
             </router-link>
           </div>
           <el-menu-item index="/">首页</el-menu-item>
@@ -313,11 +314,11 @@ a:hover {
   background: #fff;
 }
 .topbar .nav .shopCart:hover a {
-  color: #ff6700;
+  color: #5b6ef5;
 }
 .topbar .nav .shopCart-full {
   width: 120px;
-  background: #ff6700;
+  background: #5b6ef5;
 }
 .topbar .nav .shopCart-full a {
   color: white;
@@ -331,14 +332,53 @@ a:hover {
 }
 .el-header .logo {
   height: 60px;
-  width: 189px;
   float: left;
   margin-right: 100px;
+}
+.logo a {
+  display: flex;
+  align-items: center;
+  height: 60px;
+  text-decoration: none;
+}
+.logo-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #5b6ef5, #8f6ef5);
+  color: #fff;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  box-shadow: 0 4px 10px rgba(91, 110, 245, 0.35);
+}
+.logo-name {
+  font-size: 24px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, #5b6ef5, #8f6ef5);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.el-header .el-menu-item {
+  font-size: 16px;
+  transition: color 0.2s;
+}
+.el-header .el-menu-item:hover {
+  color: #5b6ef5;
 }
 .el-header .so {
   margin-top: 10px;
   width: 300px;
   float: right;
+}
+.el-header .so .el-input-group__append .el-button {
+  color: #5b6ef5;
+}
+.el-header .so .el-input-group__append .el-button:hover {
+  color: #4753d6;
 }
 /* 顶栏容器CSS END */
 

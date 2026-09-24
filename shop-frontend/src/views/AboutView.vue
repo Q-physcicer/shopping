@@ -9,7 +9,7 @@
   <div class="about" id="about" name="about">
     <div class="about-header">
       <div class="about-title">
-        <i class="el-icon-tickets" style="color: #ff6700;"></i>
+        <i class="el-icon-tickets" style="color: #5b6ef5;"></i>
         关于我们
       </div>
     </div>
@@ -33,7 +33,7 @@ export default {
 .about .about-header {
   height: 64px;
   background-color: #fff;
-  border-bottom: 2px solid #ff6700;
+  border-bottom: 2px solid #5b6ef5;
 }
 .about .about-header .about-title {
   width: 1225px;

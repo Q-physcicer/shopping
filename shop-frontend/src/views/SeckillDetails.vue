@@ -83,10 +83,10 @@
         <div class="pro-policy">
           <ul>
             <li>
-              <i class="el-icon-circle-check"></i> 小米自营
+              <i class="el-icon-circle-check"></i> 星选自营
             </li>
             <li>
-              <i class="el-icon-circle-check"></i> 小米发货
+              <i class="el-icon-circle-check"></i> 极速发货
             </li>
             <li>
               <i class="el-icon-circle-check"></i> 7天无理由退货
@@ -291,7 +291,7 @@ export default {
 }
 #details .page-header .title .list li a:hover {
   font-size: 14px;
-  color: #ff6700;
+  color: #5b6ef5;
 }
 /* 头部CSS END */
 
@@ -327,13 +327,13 @@ export default {
   padding-top: 10px;
 }
 #details .main .content .store {
-  color: #ff6700;
+  color: #5b6ef5;
   padding-top: 10px;
 }
 #details .main .content .price {
   display: block;
   font-size: 18px;
-  color: #ff6700;
+  color: #5b6ef5;
   border-bottom: 1px solid #e0e0e0;
   padding: 25px 0 25px;
 }
@@ -360,7 +360,7 @@ export default {
   text-decoration: line-through;
 }
 #details .main .content .pro-list .price-sum {
-  color: #ff6700;
+  color: #5b6ef5;
   font-size: 24px;
   padding-top: 20px;
 }
@@ -378,10 +378,10 @@ export default {
 }
 #details .main .content .button .shop-cart {
   width: 340px;
-  background-color: #ff6700;
+  background-color: #5b6ef5;
 }
 #details .main .content .button .shop-cart:hover {
-  background-color: #f25807;
+  background-color: #4753d6;
 }
 
 #details .main .content .button .like {
