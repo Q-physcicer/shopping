@@ -31,6 +31,8 @@ spring:
     user:
       name: user
       password: pass
+  thymeleaf:
+    check-template-location: false  # 项目未使用模板页面，关闭模板目录检查
   autoconfigure:
     - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
     - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration

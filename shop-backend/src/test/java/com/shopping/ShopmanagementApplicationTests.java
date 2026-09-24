@@ -1,38 +1,35 @@
 package com.shopping;
 
-import com.shopping.Controller.OrderController;
 import com.shopping.service.impl.OrderServiceImpl;
-import com.shopping.util.Result;
-import com.shopping.vo.OrderVo;
+import com.shopping.service.impl.UserServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import com.shopping.pojo.User;
-import com.shopping.service.impl.UserServiceImpl;
-import org.springframework.data.redis.core.RedisTemplate;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import java.util.List;
-
+/**
+ * 上下文加载测试：验证 Spring 容器能完整启动，
+ * 覆盖 数据源/MyBatis 绑定/Redis/RabbitMQ/Spring AI(ChatClient) 等核心装配。
+ * 不依赖具体的业务数据，可通过 mvn package 稳定跑过。
+ */
 @SpringBootTest
 class ShopmanagementApplicationTests {
 
-    //private static final Logger logger = LoggerFactory.getLogger(ShopmanagementApplicationTests.class);
+    @Autowired
+    private UserServiceImpl userService;
 
     @Autowired
-    private UserServiceImpl u;
+    private OrderServiceImpl orderService;
+
     @Autowired
-    private OrderServiceImpl osi;
-    @Autowired
-    private RedisTemplate  redisTemplate;
+    private ChatClient chatClient;
 
     @Test
     void contextLoads() {
-        String cookie = "1cdcfcc9c2718cea653b8414f589cd5c|33|qwert|";
-        Integer userId = (Integer) redisTemplate.opsForHash().get(cookie, "userId");
-        System.out.println(userId);
-        List<List<OrderVo>> orders = osi.getOrder(userId);
-        System.out.println(orders);
+        assertNotNull(userService, "UserService 应完成装配");
+        assertNotNull(orderService, "OrderService 应完成装配");
+        assertNotNull(chatClient, "Spring AI ChatClient 应完成装配");
     }
 }
-
