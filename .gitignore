@@ -53,3 +53,18 @@ nbdist/
 application-local.yml
 .env*
 *.env.local
+
+# 隔离区：旧单体迁移副本/参考项目/旧构建产物（本地保留，不入库）
+.trash/
+
+######################################################################
+# 前端依赖与构建产物（双前端 shop-frontend / shop-admin-web 兜底）
+**/node_modules/
+**/dist/
+**/.vite/
+**/.eslintcache
+**/.parcel-cache/
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
