@@ -10,6 +10,11 @@ const routes = [
     component: () => import('../views/HomeView.vue')
   },
   {
+    path: '/search',
+    name: 'Search',
+    component: () => import('../views/SearchView.vue')
+  },
+  {
     path: '/error',
     name: 'Error',
     component: () => import('../components/ErrorPage.vue')
@@ -67,6 +72,14 @@ const routes = [
     path: '/confirmOrder',
     name: 'ConfirmOrder',
     component: () => import('../views/ConfirmOrder.vue'),
+    meta: {
+      requireAuth: true // 需要验证登录状态
+    }
+  },
+  {
+    path: '/pay/:orderId',
+    name: 'Pay',
+    component: () => import('../views/PayView.vue'),
     meta: {
       requireAuth: true // 需要验证登录状态
     }

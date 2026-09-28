@@ -1,0 +1,49 @@
+server:
+  port: 8106
+
+spring:
+  application:
+    name: shop-chat
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  mvc:
+    async:
+      request-timeout: 180000   # SSE 流式响应超时（ms），与网关 response-timeout 对齐
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
+        username: ${NACOS_USERNAME:}
+        password: ${NACOS_PASSWORD:}
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:demo}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+          max-tokens: 2048
+    # MCP Server（P4）：工具由 MCP starter 自动暴露为 MCP tools
+    mcp:
+      server:
+        name: shop-mcp-server
+        version: 1.0.0
+        # webmvc 版默认 SSE 端点：GET /sse（消息端点 /mcp/message）；8106 直连，不经网关
+        type: SYNC
+        capabilities:
+          tool: true
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      lettuce:
+        pool:
+          min-idle: 0
+          max-idle: 8
+          max-active: 8
+          max-wait: -1ms
+
+jackson:
+  date-format: yyyy-MM-dd HH:mm:ss

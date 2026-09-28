@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3e0"/>
+      <stop offset="1" stop-color="#ffccbc"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="600" fill="url(#bg)"/>
+  <circle cx="480" cy="120" r="150" fill="#ffffff" opacity="0.18"/>
+  <circle cx="110" cy="500" r="180" fill="#ffffff" opacity="0.14"/>
+  <circle cx="60" cy="80" r="46" fill="#ffffff" opacity="0.22"/>
+  <circle cx="540" cy="470" r="28" fill="#ffffff" opacity="0.28"/>
+  <text x="300" y="330" font-size="230" text-anchor="middle">👶</text>
+  <rect x="130" y="452" width="340" height="56" rx="28" fill="#ffffff" opacity="0.75"/>
+  <text x="300" y="490" font-size="30" font-weight="600" fill="#3a3f5c" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei',sans-serif">纯棉婴儿连体衣</text>
+  <text x="300" y="546" font-size="18" fill="#3a3f5c" opacity="0.55" text-anchor="middle" font-family="'PingFang SC',sans-serif">星选百货 · 精选好物</text>
+</svg>

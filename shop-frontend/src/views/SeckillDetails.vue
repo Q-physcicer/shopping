@@ -197,7 +197,7 @@ export default {
         }
         
     },
-    // 加入购物车 
+    // 秒杀抢购（P2：异步排队 + 结果轮询）
     addSeckill() {
       // 判断是否登录,没有登录则显示登录组件
       if (!this.$store.getters.getUser) {
@@ -207,28 +207,50 @@ export default {
       this.$axios
         .post("/api/seckill/product/seckill/" + this.seckillID)
         .then(res => {
-          switch (res.data.code) {
-            case "001":
-              // 新加入购物车成功
-              this.notifySucceed(res.data.msg);
-              break;
-            case "2":
-              // 该商品已经在购物车，数量+1
-              this.dis = true;
-              this.notifySucceed(res.data.msg);
-              break;
-            case "3":
-              // 商品数量达到限购数量
-              this.dis = true;
-              this.notifyError(res.data.msg);
-              break;
-            default:
-              this.notifyError(res.data.msg);
+          if (res.data.code === 1) {
+            // 抢购请求已进入排队（后端 Redis 预扣 + MQ 异步落库）
+            this.dis = true;
+            this.notifySucceed("正在排队，请稍候…");
+            this.pollSeckillResult();
+          } else {
+            // 售罄/未开始/重复抢购/限流
+            this.dis = true;
+            this.notifyError(res.data.msg || "抢购失败");
           }
         })
         .catch(err => {
           return Promise.reject(err);
         });
+    },
+    // 轮询秒杀结果：SENT=排队中，CONSUMED=成功，FAILED/超时=失败
+    pollSeckillResult() {
+      const maxRetry = 60; // 最多轮询 60 次 × 2s = 2 分钟
+      let retry = 0;
+      const timer = setInterval(() => {
+        retry++;
+        this.$axios
+          .get("/api/seckill/product/result/" + this.seckillID)
+          .then(res => {
+            const status = res.data.data;
+            if (status === "CONSUMED") {
+              clearInterval(timer);
+              this.notifySucceed("恭喜！抢购成功，订单已生成，请前往订单页支付");
+            } else if (status === "FAILED") {
+              clearInterval(timer);
+              this.notifyError("很遗憾，排队未成功，库存已回滚");
+            } else if (retry >= maxRetry) {
+              clearInterval(timer);
+              this.notifyError("排队超时，请稍后在订单页查看结果");
+              this.dis = false;
+            }
+          })
+          .catch(() => {
+            if (retry >= maxRetry) {
+              clearInterval(timer);
+              this.dis = false;
+            }
+          });
+      }, 2000);
     },
     addCollect() {
       // 判断是否登录,没有登录则显示登录组件
@@ -237,7 +259,7 @@ export default {
         return;
       }
       this.$axios
-        .post("/api/collect/user/" + this.productID + "/" + this.$store.getters.getUser.userId)
+        .post("/api/collect/user/" + this.productID)
         .then(res => {
           if (res.data.code == "001") {
             // 添加收藏成功

@@ -39,7 +39,7 @@ export default {
   activated() {
     // 获取收藏数据
     this.$axios
-      .get("/api/collect/user/" + this.$store.getters.getUser.userId)
+      .get("/api/collect/user")
       .then(res => {
         if (res.data.code) {
           this.collectList = res.data.data;

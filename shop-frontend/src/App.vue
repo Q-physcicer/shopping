@@ -181,7 +181,7 @@ export default {
       } else {
         // 用户已经登录,获取该用户的购物车信息
         this.$axios
-          .get("/api/cart/user/" + val.userId)
+          .get("/api/cart/user")
           .then(res => {
             if (res.data.code === "001") {
               // 001 为成功, 更新vuex购物车状态
@@ -219,8 +219,8 @@ export default {
     // 点击搜索按钮
     searchClick() {
       if (this.search != "") {
-        // 跳转到全部商品页面,并传递搜索条件
-        this.$router.push({ path: "/goods", query: { search: this.search } });
+        // P3：跳转独立搜索页（ES/MySQL 双引擎，带高亮）
+        this.$router.push({ path: "/search", query: { keyword: this.search } });
         this.search = "";
       }
     },

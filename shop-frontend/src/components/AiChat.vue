@@ -23,7 +23,8 @@
         <div class="ai-chat-body" ref="chatBody">
           <div class="ai-chat-welcome">
             您好，我是星选商场的智能客服小智 🤖<br />
-            关于商品、订单、物流、售后的任何问题，都可以问我哦～
+            关于商品、订单、物流、售后的任何问题，都可以问我哦～<br />
+            <span class="ai-chat-skill">登录后我还能帮你：<b>搜商品 · 加购物车 · 直接下单</b>，试试说「帮我下一单 Redmi 8」</span>
           </div>
           <div
             v-for="(msg, index) in messages"
@@ -31,7 +32,12 @@
             :class="['ai-chat-msg', msg.role === 'user' ? 'ai-chat-msg-user' : 'ai-chat-msg-bot']"
           >
             <div class="ai-chat-avatar">{{ msg.role === "user" ? "我" : "智" }}</div>
-            <div class="ai-chat-bubble">{{ msg.content }}<span v-if="msg.typing" class="ai-chat-cursor">▍</span></div>
+            <div
+              v-if="msg.role === 'user'"
+              class="ai-chat-bubble"
+            >{{ msg.content }}</div>
+            <div v-else class="ai-chat-bubble ai-chat-md" v-html="renderMd(msg.content)"></div>
+            <span v-if="msg.role === 'assistant' && msg.typing" class="ai-chat-cursor">▍</span>
           </div>
           <div v-if="waiting && !streaming" class="ai-chat-msg ai-chat-msg-bot">
             <div class="ai-chat-avatar">智</div>
@@ -48,7 +54,8 @@
             :disabled="waiting"
             @keyup.enter.native="send"
           ></el-input>
-          <el-button size="small" type="primary" :loading="waiting" @click="send">发送</el-button>
+          <el-button v-if="!streaming" size="small" type="primary" :loading="waiting" @click="send">发送</el-button>
+          <el-button v-else size="small" type="danger" plain @click="stop">停止</el-button>
         </div>
       </div>
     </transition>
@@ -56,6 +63,9 @@
 </template>
 
 <script>
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
 export default {
   name: "AiChat",
   data() {
@@ -138,6 +148,15 @@ export default {
       this.waiting = false;
       this.streaming = false;
       this.scrollToBottom();
+    },
+    // 停止生成：EventSource.close() 不触发 onerror/done，必须自行走 finish 收尾（保留已生成内容）
+    stop() {
+      this.finishStreaming();
+    },
+    // Markdown 渲染（仅助手气泡）：marked 解析 + DOMPurify 消毒防 XSS，与搜索高亮清洗先例一致
+    renderMd(text) {
+      const html = marked.parse(text || "", { breaks: true });
+      return DOMPurify.sanitize(html);
     },
     closeEs() {
       if (this.es) {
@@ -277,6 +296,12 @@ export default {
   border: 1px dashed rgba(91, 110, 245, 0.35);
   margin-bottom: 14px;
 }
+.ai-chat-skill {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #8f6ef5;
+}
 .ai-chat-msg {
   display: flex;
   margin-bottom: 14px;
@@ -333,6 +358,71 @@ export default {
   animation: blink 0.8s infinite;
   color: #5b6ef5;
   font-weight: bold;
+  margin-left: 2px;
+}
+/* 助手气泡 Markdown 渲染 */
+.ai-chat-md {
+  white-space: normal;
+  word-break: break-word;
+}
+.ai-chat-md :deep(h1),
+.ai-chat-md :deep(h2),
+.ai-chat-md :deep(h3),
+.ai-chat-md :deep(h4) {
+  margin: 6px 0 4px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ai-chat-md :deep(h1) { font-size: 15px; }
+.ai-chat-md :deep(h2) { font-size: 14px; }
+.ai-chat-md :deep(h3),
+.ai-chat-md :deep(h4) { font-size: 13px; }
+.ai-chat-md :deep(p) { margin: 4px 0; }
+.ai-chat-md :deep(ul),
+.ai-chat-md :deep(ol) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.ai-chat-md :deep(li) { margin: 2px 0; }
+.ai-chat-md :deep(code) {
+  background: #f0f2f8;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: Menlo, Consolas, monospace;
+}
+.ai-chat-md :deep(pre) {
+  background: #f0f2f8;
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.ai-chat-md :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+.ai-chat-md :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.ai-chat-md :deep(th),
+.ai-chat-md :deep(td) {
+  border: 1px solid #e0e2ee;
+  padding: 4px 8px;
+  text-align: left;
+}
+.ai-chat-md :deep(blockquote) {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid #b9c0ef;
+  color: #888;
+}
+.ai-chat-md :deep(a) {
+  color: #5b6ef5;
+  text-decoration: none;
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }

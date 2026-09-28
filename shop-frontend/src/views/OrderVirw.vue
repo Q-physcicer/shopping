@@ -26,6 +26,17 @@
           <li class="order-info">
             <div class="order-id">订单编号: {{item[0].orderId}}</div>
             <div class="order-time">订单时间: {{item[0].orderTime | dateFormat}}</div>
+            <div class="order-status">
+              <!-- P6：订单状态机 0待支付 1已支付 2已取消 3已完成 -->
+              <span v-if="item[0].status === 0" class="status-tag status-pending">待支付</span>
+              <span v-else-if="item[0].status === 1" class="status-tag status-paid">已支付</span>
+              <span v-else-if="item[0].status === 2" class="status-tag status-cancelled">已取消<em v-if="item[0].seckillId">·超时未支付</em></span>
+              <span v-else-if="item[0].status === 3" class="status-tag status-done">已完成</span>
+              <span v-if="item[0].seckillId" class="status-seckill">秒杀单</span>
+              <!-- 待支付单：跳转模拟收银台 -->
+              <el-button v-if="item[0].status === 0" type="primary" size="mini" class="pay-btn"
+                         @click="$router.push('/pay/' + item[0].orderId)">去支付</el-button>
+            </div>
           </li>
           <li class="header">
             <div class="pro-img"></div>
@@ -127,6 +138,21 @@ export default {
   }
 };
 </script>
+<style scoped>
+/* P6：订单状态徽标与支付入口 */
+.order-info { position: relative; }
+.order-status { position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 8px; }
+.status-tag { font-size: 12px; padding: 2px 10px; border-radius: 10px; font-style: normal; }
+.status-tag em { font-style: normal; opacity: .7; }
+.status-pending { color: #ff9c40; background: rgba(255,156,64,.12); }
+.status-paid { color: #22c58b; background: rgba(34,197,139,.12); }
+.status-cancelled { color: #9a9aae; background: #f1f1f6; }
+.status-done { color: #5b6ef5; background: rgba(91,110,245,.12); }
+.status-seckill { color: #ff4d4f; background: rgba(255,77,79,.1); font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+.pay-btn { margin-left: 6px; }
+</style>
+
 <style scoped>
 .order {
   background-color: #f5f5f5;

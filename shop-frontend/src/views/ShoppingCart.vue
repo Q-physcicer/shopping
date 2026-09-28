@@ -122,8 +122,7 @@ export default {
   methods: {
     ...mapActions(["updateShoppingCart", "deleteShoppingCart", "checkAll", "setShoppingCart"]),
     loadShoppingCart() {
-      const userId = this.$store.getters.getUser.userId;
-      this.$axios.get(`/api/cart/user/${userId}`).then(res => {
+      this.$axios.get(`/api/cart/user`).then(res => {
         if (res.data.code) {
           // 处理后端返回的数据，确保格式一致
           const formattedData = res.data.data.map(item => {
@@ -151,7 +150,7 @@ export default {
       this.updateShoppingCart({ key: key, prop: "check", val: true });
       // 向后端发起更新购物车的数据库信息请求
       this.$axios
-        .put("/api/cart/user/num/" + cartId + "/" + this.$store.getters.getUser.userId + "/" + currentValue)
+        .put("/api/cart/user/num/" + cartId + "/" + currentValue)
         .then(res => {
           if (res.data.code) {
             // “1”代表更新成功
@@ -179,7 +178,7 @@ export default {
     // 向后端发起删除购物车的数据库信息请求
     deleteItem(e, cartId) {
       this.$axios
-        .delete("/api/cart/user/" + cartId + "/" + this.$store.getters.getUser.userId)
+        .delete("/api/cart/user/" + cartId)
         .then(res => {
           if (res.data.code) {
             // “1” 删除成功

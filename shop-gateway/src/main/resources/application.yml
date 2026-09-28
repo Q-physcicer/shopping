@@ -1,0 +1,59 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: shop-gateway
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
+        username: ${NACOS_USERNAME:}
+        password: ${NACOS_PASSWORD:}
+    gateway:
+      httpclient:
+        response-timeout: 180s   # 与 chat 服务 SSE 超时对齐
+      routes:
+        - id: user-route
+          uri: lb://shop-user
+          predicates:
+            - Path=/user/**
+        - id: product-route
+          uri: lb://shop-product
+          predicates:
+            - Path=/product/**,/category/**,/productPicture/**,/resources/**,/seckill/**
+        - id: cart-route
+          uri: lb://shop-cart
+          predicates:
+            - Path=/cart/**,/collect/**
+        - id: order-route
+          uri: lb://shop-order
+          predicates:
+            - Path=/order/**,/pay/**
+        - id: admin-route
+          uri: lb://shop-admin
+          predicates:
+            - Path=/admin/**
+        - id: chat-route
+          uri: lb://shop-chat
+          predicates:
+            - Path=/chat/**,/agent/**   # 含 /agent/admin/stream（管理 Agent 在 chat 服务）
+      # 全局 CORS（开发直连场景；生产 Nginx 同源反代不依赖此配置）
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+
+# JWT（P1 AuthGlobalFilter 使用）
+shop:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-secret-change-in-prod-0123456789abcdef}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: info

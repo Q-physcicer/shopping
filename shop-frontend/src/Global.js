@@ -1,6 +1,8 @@
 /* * @Description: 全局变量 */
 exports.install = function (Vue) {
-  Vue.prototype.$target = "http://47.115.85.237:3000/"; // 线上图片地址
+  // 图片静态资源前缀：开发环境用老资源服务器；生产构建走同源（Nginx 托管 public/imgs）；
+  // 需要指向其它资源服务器时用环境变量 IMG_TARGET 覆盖（vue.config.js 或 .env 文件）
+  Vue.prototype.$target = process.env.VUE_APP_IMG_TARGET || "/";
   
   // 封装提示成功的弹出框
   Vue.prototype.notifySucceed = function (msg) {

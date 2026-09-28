@@ -164,8 +164,9 @@ export default {
               }
               // 提示结算价格
               this.notifySucceed(res.data.msg);
-              // 跳转我的订单页面
-              this.$router.push({ path: "/order" });
+              // P6：直接跳转模拟收银台完成支付（无 orderId 时回退到订单页）
+              const orderId = res.data.data && res.data.data.orderId;
+              this.$router.push(orderId ? `/pay/${orderId}` : "/order");
           }else{
             // 提示失败信息
             this.notifyError(res.data.msg);

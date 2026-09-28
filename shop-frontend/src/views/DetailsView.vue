@@ -154,7 +154,7 @@ export default {
         return;
       }
       this.$axios
-        .post("/api/cart/product/user/" + this.productID + "/" + this.$store.getters.getUser.userId)
+        .post("/api/cart/product/" + this.productID)
         .then(res => {
           
           switch (res.data.code) {
@@ -188,7 +188,7 @@ export default {
         return;
       }
       this.$axios
-        .post("/api/collect/user/" + this.productID + "/" + this.$store.getters.getUser.userId)
+        .post("/api/collect/user/" + this.productID)
         .then(res => {
           if (res.data.code == "001") {
             // 添加收藏成功

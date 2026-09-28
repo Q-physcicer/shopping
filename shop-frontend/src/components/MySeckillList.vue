@@ -59,7 +59,7 @@ export default {
   methods: {
     deleteCollect(product_id) {
       this.$axios
-        .delete("/api/collect/user/" + product_id + "/" + this.$store.getters.getUser.userId)
+        .delete("/api/collect/user/" + product_id)
         .then(res => {
           if(res.data.code){
               // 删除成功

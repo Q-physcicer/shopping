@@ -1,0 +1,45 @@
+# ============================================================
+# 本地开发环境编排：只编排"新增"的中间件（Nacos / ES 可选）
+# MySQL / Redis / RabbitMQ 用户本机已装，直接 localhost 访问
+#
+# 用法：
+#   cd deploy && docker compose -f docker-compose.dev.yml up -d
+#   （只需要注册中心时：docker compose -f docker-compose.dev.yml up -d nacos）
+#
+# 服务器部署使用 docker-compose.server.yml（P7 交付，全套中间件）
+# ============================================================
+
+services:
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    container_name: shop-nacos
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"          # 本地开发不启鉴权；服务器上置 true 并改密钥
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+    ports:
+      - "8848:8848"   # 控制台 / OpenAPI
+      - "9848:9848"   # gRPC（客户端 2.x 必需）
+    volumes:
+      - nacos-data:/home/nacos/data
+    restart: unless-stopped
+
+  # Elasticsearch 搜索（P3 启用；本地内存紧张可不启，搜索自动降级 MySQL）
+  elasticsearch:
+    image: elasticsearch:8.14.3
+    container_name: shop-es
+    profiles: ["es"]                     # docker compose --profile es up -d 才启动
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"    # 本地开发关闭安全认证
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+volumes:
+  nacos-data:
+  es-data:

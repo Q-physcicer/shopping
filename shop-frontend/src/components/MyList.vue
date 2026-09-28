@@ -47,7 +47,7 @@ export default {
       let categoryID = [];
       if (this.list != "") {
         for (let i = 0; i < this.list.length; i++) {
-          const id = this.list[i].category_id;
+          const id = this.list[i].categoryId;
           if (!categoryID.includes(id)) {
             categoryID.push(id);
           }
@@ -59,7 +59,7 @@ export default {
   methods: {
     deleteCollect(product_id) {
       this.$axios
-        .delete("/api/collect/user/" + product_id + "/" + this.$store.getters.getUser.userId)
+        .delete("/api/collect/user/" + product_id)
         .then(res => {
           if(res.data.code){
             // 删除成功
@@ -96,6 +96,8 @@ export default {
   -webkit-transition: all 0.2s linear;
   transition: all 0.2s linear;
   position: relative;
+  border-radius: 12px;              /* P8：百货化卡片圆角 */
+  overflow: hidden;
 }
 .myList ul li:hover {
   z-index: 2;

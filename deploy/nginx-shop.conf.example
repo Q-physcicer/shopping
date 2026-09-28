@@ -1,0 +1,69 @@
+# 星选商城 Nginx 生产配置示例（单机 80 端口三站点合一）
+# 部署路径假设：
+#   /opt/shop/shop-frontend-dist   购物端构建产物（npm run build 的 dist/*）
+#   /opt/shop/shop-admin-dist      管理端构建产物
+#   /opt/shop/public               静态资源（原 47.115.85.237:3000 的 public/imgs 迁移至此）
+# 网关跑在 127.0.0.1:8080；前端构建时用 VUE_APP_IMG_TARGET=/ 指向同源资源
+#
+# 安装：cp deploy/nginx-shop.conf.example /etc/nginx/conf.d/shop.conf（按需改路径）&& nginx -s reload
+
+# 上游：API 网关
+upstream shop_gateway {
+    server 127.0.0.1:8080;
+    keepalive 64;
+}
+
+server {
+    listen 80;
+    server_name shop.example.com;          # 换成你的域名或服务器 IP
+
+    client_max_body_size 20m;
+
+    # ---------------- 静态资源（图片等，替代老资源服务器） ----------------
+    location /public/ {
+        alias /opt/shop/public/;
+        expires 30d;
+        access_log off;
+    }
+
+    # ---------------- 购物端（默认站点） ----------------
+    location / {
+        root /opt/shop/shop-frontend-dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;   # Vue history 路由
+    }
+
+    # ---------------- 管理端（/admin 路径部署，与后端 /api/admin 不冲突） ----------------
+    # 管理端构建需设置 base：vite.config.js 里 base:'/admin/'（或用独立域名/端口部署）
+    location /admin/ {
+        alias /opt/shop/shop-admin-dist/;
+        try_files $uri $uri/ /admin/index.html;
+    }
+
+    # ---------------- API 反代到网关 ----------------
+    location /api/ {
+        proxy_pass http://shop_gateway/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 先剥客户端伪造的身份 header（与网关 AuthGlobalFilter 双保险）
+        proxy_set_header X-User-Id "";
+        proxy_set_header X-User-Name "";
+        proxy_set_header X-User-Role "";
+
+        # SSE（AI Agent）：禁缓冲 + 拉长超时，与网关/后端的 180s 对齐
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+        proxy_set_header Connection "";
+    }
+
+    # ---------------- gzip ----------------
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+    # 注意：/api 反代已关闭缓冲勿压缩 SSE；静态资源压缩按上面类型白名单
+}

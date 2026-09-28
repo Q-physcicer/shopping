@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="615" viewBox="0 0 240 615">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb300"/>
+      <stop offset="1" stop-color="#ff7043"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="615" fill="url(#bg)"/>
+  <circle cx="200" cy="90" r="70" fill="#ffffff" opacity="0.14"/>
+  <circle cx="40" cy="560" r="90" fill="#ffffff" opacity="0.10"/>
+  <text x="120" y="210" font-size="110" text-anchor="middle">🥗</text>
+  <text x="120" y="340" font-size="34" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'PingFang SC',sans-serif">食品生鲜</text>
+  <text x="120" y="390" font-size="18" fill="#ffffff" opacity="0.9" text-anchor="middle" font-family="'PingFang SC',sans-serif">新鲜即刻直达</text>
+  <rect x="55" y="430" width="130" height="42" rx="21" fill="#ffffff" opacity="0.25"/>
+  <text x="120" y="458" font-size="19" fill="#ffffff" text-anchor="middle" font-family="'PingFang SC',sans-serif">专区直达</text>
+</svg>
