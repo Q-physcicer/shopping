@@ -8,12 +8,7 @@ spring:
       # 本地显式保留（Nacos shop-common.yml 有同值 180000 双保险）：
       # SSE 是 chat 命脉，若 Nacos 分发链路异常，本地兜底防止回退容器默认 30s 导致流中断
       request-timeout: 180000
-  cloud:
-    nacos:
-      discovery:
-        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
-        username: ${NACOS_USERNAME:}
-        password: ${NACOS_PASSWORD:}
+  # nacos.connection（config+discovery）归 bootstrap.yml，本机差异归 bootstrap-local.yml
   ai:
     openai:
       api-key: ${DEEPSEEK_API_KEY:demo}
@@ -32,3 +27,9 @@ spring:
         type: SYNC
         capabilities:
           tool: true
+
+# 日志级别开关：env 可调（本机排障用 SHOP_LOG_LEVEL=debug 打印业务包与 MyBatis SQL）
+logging:
+  level:
+    root: ${LOG_LEVEL:info}
+    com.shop: ${SHOP_LOG_LEVEL:info}

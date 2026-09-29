@@ -2,13 +2,8 @@ server:
   port: 8102
 
 # application.name/profiles 已迁 bootstrap.yml；mybatis-plus/redis/autoconfigure.exclude/jackson/rabbitmq 连接基座已上移 Nacos shop-common.yml（group SHOP）
+# nacos.connection（config+discovery）归 bootstrap.yml，本机差异归 bootstrap-local.yml
 spring:
-  cloud:
-    nacos:
-      discovery:
-        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
-        username: ${NACOS_USERNAME:}
-        password: ${NACOS_PASSWORD:}
   # datasource 不上 Nacos（本地 application-local.yml 用它覆盖连旧库 shopmanagement）
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/shop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
@@ -22,3 +17,9 @@ spring:
 shop:
   search:
     es-enabled: ${ES_ENABLED:false}
+
+# 日志级别开关：env 可调（本机排障用 SHOP_LOG_LEVEL=debug 打印业务包与 MyBatis SQL）
+logging:
+  level:
+    root: ${LOG_LEVEL:info}
+    com.shop: ${SHOP_LOG_LEVEL:info}
