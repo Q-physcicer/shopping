@@ -1,0 +1,61 @@
+# ============================================================
+# 星选商城公共配置：Nacos dataId = shop-common.yml / group = SHOP
+# 源文件 deploy/nacos/shop-common.yml，改动后重跑 scripts/nacos-config-upload.sh 同步
+# 该 Nacos 服务器多项目共享——本项目配置一律 SHOP 组 + shop- 前缀 dataId，勿动其他组
+#
+# 优先级铁律（bootstrap 模式：Nacos 远端 > JVM -D > 环境变量 > 本地 yml 含 local 覆盖）：
+#  1) 敏感值（密码/密钥）禁止上此文件
+#  2) 需要 application-local.yml 覆盖的键（如 datasource.url）禁止上此文件
+#  3) 需要运维 env 覆盖的键一律写 ${ENV:default} 占位符——占位符在子上下文解析，env 注入照常生效
+# ============================================================
+spring:
+  jackson:
+    # 层级修正（原 7 份 application.yml 误放顶级 jackson.*，从未生效）
+    # 注意：MVC 实际序列化走 shop-common 的 JacksonConfig @Bean ObjectMapper，此键目前是预留位
+    date-format: yyyy-MM-dd HH:mm:ss
+  mvc:
+    async:
+      # SSE 流式 180s 全服务对齐（chat 命脉，网关 httpclient 180s 已在 gateway yml）
+      # webflux 网关无 MVC 异步概念，inert 无害
+      request-timeout: 180000
+  autoconfigure:
+    # 防御性排除（当前 7 服务均未引 spring-boot-starter-security，属 inert 保险：防将来误引入弹默认登录页）
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  data:
+    redis:
+      # 无 data-redis 依赖的服务（cart/gateway 普通块）此块 inert 无害
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      lettuce:
+        pool:
+          min-idle: 0
+          max-idle: 8
+          max-active: 8
+          max-wait: -1ms
+  rabbitmq:
+    host: ${MQ_HOST:localhost}
+    port: ${MQ_PORT:5672}
+    username: ${MQ_USERNAME:guest}
+    password: ${MQ_PASSWORD:guest}
+    # 发布确认基座（product 预扣库存回滚 / order TTL 消息 / admin ES 变更发布共有；
+    # admin 此前 yml 无 rabbitmq 块只有 amqp 依赖——凭据非 guest 的环境下其发布会静默连不上，此次顺修）
+    # ⚠️ listener.simple.acknowledge-mode=manual 是 order 特有差异，严禁上移（会波及 product 的 ES 消费端）
+    publisher-confirm-type: correlated
+
+mybatis-plus:
+  mapper-locations: classpath:mybatis/*.xml
+  global-config:
+    db-config:
+      # id-type: auto 丢失会退化 ASSIGN_ID 雪花 id 写 int 自增列——bootstrap.yml fail-fast=true 的核心理由
+      id-type: auto
+      field-strategy: not_null
+      table-underline: true
+      logic-delete-field: deleted
+      logic-not-delete-value: 0
+      logic-delete-value: 1
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false

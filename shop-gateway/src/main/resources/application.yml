@@ -1,17 +1,10 @@
 server:
   port: 8080
 
+# application.name/profiles 已迁 bootstrap.yml（Nacos 配置中心需要先于主上下文确定）
+# nacos.connection（config+discovery）归 bootstrap.yml，本机差异归 bootstrap-local.yml
 spring:
-  application:
-    name: shop-gateway
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
   cloud:
-    nacos:
-      discovery:
-        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
-        username: ${NACOS_USERNAME:}
-        password: ${NACOS_PASSWORD:}
     gateway:
       httpclient:
         response-timeout: 180s   # 与 chat 服务 SSE 超时对齐
@@ -55,6 +48,9 @@ shop:
   jwt:
     secret: ${JWT_SECRET:dev-only-secret-change-in-prod-0123456789abcdef}
 
+# 日志级别开关：env 可调（本机排障用 SHOP_LOG_LEVEL=debug 打印业务包与 MyBatis SQL）
 logging:
   level:
     org.springframework.cloud.gateway: info
+    root: ${LOG_LEVEL:info}
+    com.shop: ${SHOP_LOG_LEVEL:info}

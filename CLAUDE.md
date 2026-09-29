@@ -31,6 +31,7 @@ shopping/
 - **鉴权**：JWT HS256，payload `{uid, username, role, jti}`，exp 7 天；Cookie 名 `XM_TOKEN` 保留但值换 JWT；网关统一鉴权后注入 `X-User-Id/X-User-Role` header（必须先剥客户端伪造的同名 header）；Controller 一律从 header 取身份，禁止路径传 userId
 - **Agent 工具调用全走 Feign**，不直连 DB；用户身份经 `ChatClient.prompt().toolContext()` 注入，工具用 `ToolContext` 取，绝不让模型编造 userId
 - **MCP Server**：`spring-ai-starter-mcp-server-webmvc`（不能用 webflux 版，SSE controller 是 webmvc + Flux 混用），8106 直连不走网关
+- **配置中心**：bootstrap.yml + nacos-config + shared-configs `shop-common.yml`（group SHOP），公共配置统一 Nacos 分发；数据与铁律详见 P12 段
 - **ES 降级**：`shop.search.es-enabled=false` 或连接失败 → 自动降级 MySQL LIKE，保证没装 ES 也能跑
 - **秒杀**：Redis Lua 预扣（现有脚本复用）→ 本地消息表(SENT) → MQ `seckill_order` → order 消费落库（幂等 CAS）→ TTL 30min 死信超时取消 + 库存回滚；RabbitMQ 用原生 TTL+死信，不装延迟插件
 - **支付**：模拟收银台，`POST /pay/mock/{orderId}` 回调改状态
@@ -60,7 +61,7 @@ shopping/
 
 - 测试类不要依赖真实业务数据，聚焦 Spring 上下文装配验证
 - SSE 流式验证不能依赖 devServer（已关 gzip），要独立 curl 验证
-- MVC 异步超时已设 180s（`spring.mvc.async.request-timeout`），拆分后各服务与网关都要对齐
+- MVC 异步超时 180s：P12 起全服务经 Nacos `shop-common.yml` 统一分发（此前实际只有 chat 落地过 MVC 侧 180000）+ 网关 httpclient 180s（gateway yml 本地持有）
 - `application-local.yml` 含真实密钥，已 gitignore，**不要提交**
 - 轮播数据中含绝对域名 `http://47.115.85.237:3000`，已由 V2__upgrade.sql 改相对路径
 - **mybatis-spring 版本锁定**（P0 实测）：MP 3.5.10 传递 mybatis-spring 2.1.2，在 Spring 6.2 下注册 Mapper Bean 报 `factoryBeanObjectType: java.lang.String` 直接启动失败。父 POM dependencyManagement 已锁 `org.mybatis:mybatis-spring:3.0.4`，**不要移除**
@@ -204,6 +205,24 @@ shopping/
 - **本地不迁移数据库**：本地 5 个服务的 application-local.yml（gitignored）加 `spring.datasource.url` 行覆盖连 shopmanagement（既有 62 用户/bkt 压测账号/订单/秒杀场 803 等本地数据原样保留）；git 默认 shop——他人 clone 后建库/连库均为 shop，本地与远端两套并行互不干扰
 - **历史坑归档发现**：现库 V2/V5/V6 的中文列注释为双重编码 mojibake 或 `?`（V7 后执行的部分是乱码、部分正常——V2 用户表注释×4 脏、V5/V6 整表注释脏；源于当时客户端未带 `--default-character-set=utf8mb4`）。shop.sql 从干净源重写所有注释；本地库如需扶正可对受影响列执行同定义 MODIFY COLUMN 换正常注释（非必需，不影响功能）
 - V1~V7 归档至 `.trash/sql-legacy/`（shop.sql 验证通过后执行；V1~V5 git 显示 deleted、V6/V7 平移无记录，删除记录留给用户提交时生效）
+
+## P12 配置中心：bootstrap + Nacos 公共配置（2026-09-29）
+
+- **结构**：7 服务各建 `bootstrap.yml`（name/profiles 迁入此层 + `spring.cloud.nacos.config`：server-addr/group SHOP/file-extension yml/**fail-fast true**/shared-configs `{data-id: shop-common.yml, group: SHOP, refresh: true}`）+ `spring.config.fail-fast: true` 兜底；pom 各加 `spring-cloud-starter-alibaba-nacos-config` + `spring-cloud-starter-bootstrap`（BOM 管版本）。公共配置源文件 `deploy/nacos/shop-common.yml`（git 跟踪）：mybatis-plus 全块、redis（占位符）、rabbitmq 连接基座+publisher-confirm、`spring.mvc.async.request-timeout: 180000`（全服务 SSE 对齐）、`spring.jackson.date-format`、autoconfigure.exclude 两条（防御性 inert）
+- **上传**：`bash scripts/nacos-config-upload.sh`（dataId=文件名/group SHOP/type yaml/`--data-urlencode content@file`；免鉴权直传或 NACOS_USERNAME/PASSWORD 自动 login 换 accessToken；幂等=覆盖）。改公共配置流程：改源文件→重跑脚本→**重启服务**（配置中心是分发不是热更新——SqlSessionFactory/连接工厂启动期已实例化，refresh 只对未来 @RefreshScope 生效）
+- **共享 Nacos 隔离（关键环境事实）**：8.130.22.3:8848 服务器实测 **2.0.3、多项目共用**——DEFAULT_GROUP 有他项目 9 个 dataId（application-common.yaml/shared-jwt.yaml/agent-*-prompt.txt）。本项目一切配置只进 **SHOP 组 + shop- 前缀**，与 discovery 的 DEFAULT_GROUP 服务注册（nacos registry 默认组，勿混淆）分开，脚本绝不触碰他组 dataId
+- **优先级三条铁律（必守）**：bootstrap 模式远端 > JVM -D > env > 本地 yml **含 application-local.yml**（PropertySourceBootstrapConfiguration addFirst）。①敏感值禁上；②需 local 覆盖的键（datasource.url——本地连旧库 shopmanagement 的机制）禁上；③需 env/-D 覆盖的键必须 `${ENV:default}` 占位符（占位符在子上下文解析，env 注入照常生效）。datasource/jwt.secret/ai key/es-enabled/cors/routes 等全部留本地
+- **fail-fast 取舍**：Nacos 不可达=服务拒启（mybatis-plus id-type 丢失会退化雪花 id 写 int 自增列，静默比失败危险）；单点故障半径全服务，README 已记
+- **application.yml 瘦身结果**：删 name/profiles/公共块；服务特有全留本地——gateway（routes/globalcors/httpclient 180s/jwt/logging）、user（jwt+datasource）、product（es 开关+uris+datasource）、order（**仅留 listener manual ack**——严禁上移，会波及 product ES 消费端）、admin（删 pom 无依赖的死 redis 块；MQ 占位补齐=顺修 admin 非 guest 凭据环境连不上 MQ 的隐雷）、chat（**mvc 180000 显式保留**双保险防 Nacos 链路异常回退容器 30s 断 SSE；ai/mcp 整块）
+- **顺修**：①`SPRING_PRO_FILES_ACTIVE` 拼写修正为 `SPRING_PROFILES_ACTIVE`（原占位符名无人设过 env，README 的 env 切 profile 从未真正生效，迁移时借 bootstrap.yml 修正）；②jackson 层级修正（原 7 份 yml 误放顶级 `jackson.*` 从未生效上移为 `spring.jackson.*`——注意 MVC 实际序列化走 shop-common JacksonConfig 的 @Bean ObjectMapper，此键为预留位，**别误以为改配置能改日期格式**）
+- **验证实测（7 服务全起）**：`~/logs/nacos/config.log` 三条 NacosConfigService init 对应三服务；MP id-type=auto 铁证=注册 cen1 落库 user_id=76 int 自增；product 启动即连 MQ（远端 rabbitmq 基座）；登录 admin/网关路由/搜索降级/加购/admin 统计聚合/DeepSeek SSE 全绿；本地 local yml 覆盖连 shopmanagement 未被远端打死（铁律 2 生效）。验证完已清测试数据并恢复停机
+- 本地开发想绕开 Nacos 联网启动：理论上可临时注掉 bootstrap.yml 的 shared-configs，但**不建议**——公共配置缺失会静默退化，宁可等 Nacos
+
+## 详情页图片修复（2026-09-29）
+
+- **根因**：购物端详情页（DetailsView.vue）调 `/productPicture/product/{id}` 查 `product_picture` 表，但 P8 百货化后该表未清未种——本地库残存 110 条小米时代死路径（`public/imgs/phone/picture/...`），商品 9+ 甚至查不到（原实现空列表直接抛 GET_PRODUCT_PICTURE_NOT_FOUND）
+- **修复双管齐下**：①`ProductPictureServiceImpl` 空列表时回退用 `product.product_picture` 主图合成一条（intro=商品名），不再抛异常——任何全新环境详情页都有图；②本地库 `DELETE FROM product_picture; INSERT ... SELECT product_id, product_picture, product_name FROM product;` 重建 33 行有效 SVG 路径（死路径残存时兜底不触发，必须清数据）
+- shop.sql 维持 P11 决策不种子该表（代码兜底已覆盖全新环境）；实测 8102 直连 4 个商品返回有效路径 + 空记录走兜底（id=null 合成条目）全通过
 
 ## 构建与验证
 

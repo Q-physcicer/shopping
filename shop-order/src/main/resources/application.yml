@@ -1,60 +1,22 @@
 server:
   port: 8104
 
+# application.name/profiles 已迁 bootstrap.yml；mybatis-plus/redis/autoconfigure.exclude/jackson/rabbitmq 连接基座已上移 Nacos shop-common.yml（group SHOP）
+# nacos.connection（config+discovery）归 bootstrap.yml，本机差异归 bootstrap-local.yml
 spring:
-  application:
-    name: shop-order
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
-  cloud:
-    nacos:
-      discovery:
-        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
-        username: ${NACOS_USERNAME:}
-        password: ${NACOS_PASSWORD:}
+  # datasource 不上 Nacos（本地 application-local.yml 用它覆盖连旧库 shopmanagement）
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/shop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
-  data:
-    redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      database: 0
-      lettuce:
-        pool:
-          min-idle: 0
-          max-idle: 8
-          max-active: 8
-          max-wait: -1ms
   rabbitmq:
-    host: ${MQ_HOST:localhost}
-    port: 5672
-    username: ${MQ_USERNAME:guest}
-    password: ${MQ_PASSWORD:guest}
-    publisher-confirm-type: correlated   # P2：订单 TTL 消息发布确认
     listener:
       simple:
-        acknowledge-mode: manual   # P2 秒杀消费幂等手动 ack
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
-      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+        acknowledge-mode: manual   # P2 秒杀消费幂等手动 ack（order 特有，不上移公共配置）
 
-mybatis-plus:
-  mapper-locations: classpath:mybatis/*.xml
-  global-config:
-    db-config:
-      id-type: auto
-      field-strategy: not_null
-      table-underline: true
-      logic-delete-field: deleted
-      logic-not-delete-value: 0
-      logic-delete-value: 1
-  configuration:
-    map-underscore-to-camel-case: true
-    cache-enabled: false
-
-jackson:
-  date-format: yyyy-MM-dd HH:mm:ss
+# 日志级别开关：env 可调（本机排障用 SHOP_LOG_LEVEL=debug 打印业务包与 MyBatis SQL）
+logging:
+  level:
+    root: ${LOG_LEVEL:info}
+    com.shop: ${SHOP_LOG_LEVEL:info}
