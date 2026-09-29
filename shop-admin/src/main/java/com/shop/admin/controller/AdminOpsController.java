@@ -3,12 +3,10 @@ package com.shop.admin.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.shop.admin.mapper.CarouselMapper;
 import com.shop.admin.mapper.CategoryMapper;
-import com.shop.admin.mapper.SeckillProductMapper;
 import com.shop.admin.mapper.SeckillTimeMapper;
 import com.shop.admin.mapper.UserMapper;
 import com.shop.admin.pojo.Carousel;
 import com.shop.admin.pojo.Category;
-import com.shop.admin.pojo.SeckillProduct;
 import com.shop.admin.pojo.SeckillTime;
 import com.shop.admin.pojo.User;
 import com.shop.common.util.Result;
@@ -26,8 +24,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -42,8 +38,6 @@ public class AdminOpsController {
     private CategoryMapper categoryMapper;
     @Autowired
     private CarouselMapper carouselMapper;
-    @Autowired
-    private SeckillProductMapper seckillProductMapper;
     @Autowired
     private SeckillTimeMapper seckillTimeMapper;
     @Autowired
@@ -92,37 +86,13 @@ public class AdminOpsController {
     }
 
     /**
-     * 新增秒杀商品（当前整点 +offsetHours 场次；迁移自原 addSeckillProduct 逻辑）。
-     * body: productId, seckillPrice, seckillStock, offsetHours(可选, 1 小时后开始)
+     * 新增秒杀商品（P1 正轨化）：Feign 调 product 侧 /seckill/admin/add。
+     * product 端负责写库 + 校验（价格≤售价/库存≤商品库存）+ 失效列表缓存 + manual 场标记
+     * （原实现在此直插 product 域表且不清缓存，新加商品对购物端不可见；手动场还会被每日 15:00 重建清掉）。
      */
     @PostMapping("/seckill")
     public Result addSeckill(@RequestBody Map<String, Object> body) {
-        Integer productId = Integer.valueOf(String.valueOf(body.get("productId")));
-        Double price = Double.valueOf(String.valueOf(body.get("seckillPrice")));
-        Integer stock = Integer.valueOf(String.valueOf(body.get("seckillStock")));
-        int offsetHours = body.get("offsetHours") == null ? 1
-                : Integer.parseInt(String.valueOf(body.get("offsetHours")));
-
-        Calendar ca = Calendar.getInstance();
-        ca.set(Calendar.MINUTE, 0);
-        ca.set(Calendar.SECOND, 0);
-        long startTime = ca.getTimeInMillis() / 1000 * 1000 + offsetHours * 3600_000L;
-        Date time = new Date(startTime);
-
-        SeckillTime one = seckillTimeMapper.selectOne(new LambdaQueryWrapper<SeckillTime>()
-                .eq(SeckillTime::getStartTime, startTime)
-                .eq(SeckillTime::getEndTime, startTime + 3600_000L));
-        if (one == null) {
-            one = new SeckillTime(null, startTime, startTime + 3600_000L);
-            seckillTimeMapper.insert(one);
-        }
-        SeckillProduct sp = new SeckillProduct();
-        sp.setProductId(productId);
-        sp.setSeckillPrice(price);
-        sp.setSeckillStock(stock);
-        sp.setTimeId(one.getTimeId());
-        seckillProductMapper.insert(sp);
-        return Result.success("秒杀商品已添加（" + offsetHours + " 小时后开始）", sp);
+        return productClient.addSeckill(body);
     }
 
     // ---------------- 用户管理 ----------------
@@ -131,6 +101,8 @@ public class AdminOpsController {
     public Result userPage(@RequestParam(value = "page", defaultValue = "1") int page,
                            @RequestParam(value = "size", defaultValue = "20") int size,
                            @RequestParam(value = "keyword", required = false) String keyword) {
+        size = Math.max(1, Math.min(size, 100));
+        page = Math.max(page, 1);
         LambdaQueryWrapper<User> w = new LambdaQueryWrapper<>();
         if (keyword != null && !keyword.isBlank()) {
             w.like(User::getUsername, keyword);
@@ -143,14 +115,32 @@ public class AdminOpsController {
         return Result.success("success", Map.of("total", total, "list", rows));
     }
 
-    /** 角色 USER<->ADMIN 切换 */
+    /**
+     * 角色 USER<->ADMIN 切换（P0-8 加防护）：
+     * - 不能改自己（防唯一管理员自降级把自己锁死在管理端外）
+     * - ADMIN 降级时若仅剩该一个 ADMIN 则拒绝（保底至少一名管理员）
+     * 注意：网关只验 JWT 内 role 不查库，被降级者的旧 token 在有效期内角色不变（幽灵管理员窗口），
+     * 详见 deploy/README.md 安全线说明。
+     */
     @PostMapping("/user/{userId}/role")
     public Result toggleRole(@PathVariable Integer userId) {
+        Long operatorId = com.shop.common.context.UserContext.getUserId();
+        if (operatorId != null && operatorId.intValue() == userId) {
+            return Result.fail("不能修改自己的角色", null);
+        }
         User u = userMapper.selectById(userId);
         if (u == null) {
             return Result.fail("用户不存在", null);
         }
-        u.setRole("ADMIN".equals(u.getRole()) ? "USER" : "ADMIN");
+        boolean toAdmin = !"ADMIN".equals(u.getRole());
+        if (!toAdmin) {
+            Long adminCount = userMapper.selectCount(new LambdaQueryWrapper<User>()
+                    .eq(User::getRole, "ADMIN"));
+            if (adminCount <= 1) {
+                return Result.fail("系统至少保留一名管理员", null);
+            }
+        }
+        u.setRole(toAdmin ? "ADMIN" : "USER");
         userMapper.updateById(u);
         return Result.success("角色已切换为 " + u.getRole());
     }
@@ -160,8 +150,15 @@ public class AdminOpsController {
     @GetMapping("/order/page")
     public Result orderPage(@RequestParam(value = "page", defaultValue = "1") int page,
                             @RequestParam(value = "size", defaultValue = "20") int size,
-                            @RequestParam(value = "status", required = false) Integer status) {
-        return orderClient.pageOrders(page, size, status);
+                            @RequestParam(value = "status", required = false) Integer status,
+                            @RequestParam(value = "orderId", required = false) String orderId) {
+        return orderClient.pageOrders(page, size, status, orderId);
+    }
+
+    /** 管理端标记订单完成（Feign 转发到 order，CAS 已支付→已完成） */
+    @PostMapping("/order/done")
+    public Result markOrderDone(@RequestBody Map<String, Object> body) {
+        return orderClient.markOrderDone(body);
     }
 
     // ---------------- 售后管理（P8，Feign 转发到 order；网关 /admin/** 已校验 ADMIN） ----------------

@@ -40,11 +40,12 @@ spring:
           uri: lb://shop-chat
           predicates:
             - Path=/chat/**,/agent/**   # 含 /agent/admin/stream（管理 Agent 在 chat 服务）
-      # 全局 CORS（开发直连场景；生产 Nginx 同源反代不依赖此配置）
+      # 全局 CORS（P2 收紧：白名单取代通配 * + credentials 组合——那会允许任意站点带 cookie 打 POST 接口）
+      # 开发双前端；生产 Nginx 同源反代不依赖此配置。可用 CORS_ORIGINS 覆盖（逗号分隔）
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOriginPatterns: "*"
+            allowedOriginPatterns: ${CORS_ORIGINS:http://localhost:7080,http://localhost:7090}
             allowedMethods: "*"
             allowedHeaders: "*"
             allowCredentials: true

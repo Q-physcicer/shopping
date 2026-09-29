@@ -92,9 +92,10 @@
             <span class="total-price-title">合计：</span>
             <span class="total-price">{{getTotalPrice}}元</span>
           </span>
-          <router-link :to="getCheckNum > 0 ? '/confirmOrder' : ''">
+          <!-- 未勾选时点击给出提示（原渲染空 href 无任何反馈） -->
+          <a href="javascript:void(0);" @click="goConfirm">
             <div :class="getCheckNum > 0 ? 'btn-primary' : 'btn-primary-disabled'">去结算</div>
-          </router-link>
+          </a>
         </div>
       </div>
       <!-- 购物车底部导航条END -->
@@ -106,6 +107,7 @@
       <div class="empty">
         <h2>您的购物车还是空的！</h2>
         <p>快去购物吧！</p>
+        <el-button type="primary" round class="empty-cta" @click="$router.push('/goods')">去逛逛</el-button>
       </div>
     </div>
     <!-- 购物车为空的时候显示的内容END -->
@@ -121,6 +123,14 @@ export default {
   },
   methods: {
     ...mapActions(["updateShoppingCart", "deleteShoppingCart", "checkAll", "setShoppingCart"]),
+    // 去结算：未勾选时明确提示（原空 href 点击静默无反馈）
+    goConfirm() {
+      if (this.getCheckNum < 1) {
+        this.notifyError("请先勾选要结算的商品");
+        return;
+      }
+      this.$router.push("/confirmOrder");
+    },
     loadShoppingCart() {
       this.$axios.get(`/api/cart/user`).then(res => {
         if (res.data.code) {
@@ -411,6 +421,10 @@ export default {
 .shoppingCart .cart-empty .empty h2 {
   margin: 70px 0 15px;
   font-size: 36px;
+}
+.shoppingCart .cart-empty .empty .empty-cta {
+  background: #5b6ef5;
+  border-color: #5b6ef5;
 }
 .shoppingCart .cart-empty .empty p {
   margin: 0 0 20px;

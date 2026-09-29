@@ -9,7 +9,7 @@
 | 中间件 | 版本建议 | 用途 | 端口 | 内存预估 |
 |---|---|---|---|---|
 | JDK | OpenJDK **17** (Temurin) | 运行 7 个 Java 服务 | - | - |
-| MySQL | 8.0.x | 业务库 shopmanagement | 3306 | 1 GB |
+| MySQL | 8.0+（本地实测 8.4.11） | 业务库 shop | 3306 | 1 GB |
 | Redis | 6.2+ / 7.x | 秒杀预扣/JWT 黑名单/Agent 会话 | 6379 | 512 MB |
 | RabbitMQ | 3.13+ + management 插件 | 削峰/超时取消/ES 同步（**无需延迟插件**，TTL+死信原生实现） | 5672 / 15672 | 512 MB |
 | Nacos | 2.4.x standalone | 注册中心 | 8848 / 9848 | 768 MB |
@@ -19,7 +19,7 @@
 
 **服务器建议配置：4C / 16GB / 60GB SSD**（最低 2C/8G 可跑）。7 个 JVM 各 `-Xmx512m` ≈ 3.5G。
 
-当前状态备注：ES 服务器现为 7.17.20（docker）且未装 ik 插件，系统以 MySQL 降级模式运行搜索；ES 修复 + 装 ik 后设 `ES_ENABLED=true` 重启 product 即切换，代码零改动。
+当前状态备注：本地已实测 ES 8.19.20 + analysis-ik 正式模式（中文分词/高亮/排序全可用，启动自动建索引+全量导入）；未装 ES 的环境自动降级 MySQL LIKE，不阻塞运行。启用方式：`ES_ENABLED=true`（或 `SVC_JAVA_OPTS=-Dshop.search.es-enabled=true`）启动 product。
 
 ## 二、环境配置约定
 
@@ -28,7 +28,7 @@
 | 环境变量 | 说明 | 默认 |
 |---|---|---|
 | `NACOS_ADDR` | Nacos 地址（本机开发默认 8.130.22.3:8848） | 8.130.22.3:8848 |
-| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | MySQL（部署时为服务器实例） | localhost:3306/shopmanagement / root / 空 |
+| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | MySQL（部署时为服务器实例） | localhost:3306/shop / root / 空 |
 | `REDIS_HOST` / `REDIS_PORT` | Redis | localhost / 6379 |
 | `MQ_HOST` / `MQ_USERNAME` / `MQ_PASSWORD` | RabbitMQ | localhost / guest / guest |
 | `ES_URI` / `ES_ENABLED` | ES 地址与开关 | http://8.130.22.3:9200 / **false** |
@@ -38,13 +38,16 @@
 
 > 本机开发：数据库/Redis/MQ 密码放各服务 `application-local.yml`（已 gitignore）；服务器部署：通过 systemd `Environment=` 或 `/etc/shop.env` 注入后启动，**不要**把真实密钥写入仓库。
 
-## 三、数据库初始化（按序执行）
+## 三、数据库初始化（单脚本全量）
 
 ```bash
-mysql -u root -p < sql/V1__baseline.sql    # 基线 9 表 + 初始数据
-mysql -u root -p < sql/V2__upgrade.sql     # 角色/订单状态机/消息表/支付流水
-mysql -u root -p < sql/V3__admin_stats.sql # user.created_at（统计用）
+mysql -u root -p --default-character-set=utf8mb4 < sql/shop.sql
+# 15 张表最终态 + 种子数据（8 分类/33 商品/3 轮播/2 秒杀场次/20 用户含 admin/admin123）
+# DROP+CREATE 语义，可重复执行（重跑即重建全部表；⚠️ 会清空业务数据）
 ```
+
+> 历史增量 V1~V7 已整合进 shop.sql 并归档 `.trash/sql-legacy/`，新环境无需再按序执行多个文件。
+> 本地开发若沿用旧库名 shopmanagement：各服务 `application-local.yml` 已配置 `spring.datasource.url` 覆盖（该文件已 gitignore）。
 
 ## 四、构建产物
 
@@ -100,6 +103,8 @@ WantedBy=multi-user.target
 **安全要求**：
 - 业务端口 8101-8106 与网关 8080 **不得对公网开放**（防火墙只放行 80/443 与维护端口）；X-User-* header 信任边界依赖网络隔离
 - MCP Server（8106 /sse）如需给外部 AI 客户端使用，请置于内网或加 IP 白名单/vpn；当前 MCP 通道无登录态，写类工具会被后端"未登录"拦截
+- **角色变更的 token 滞后窗口**：网关只校验 JWT 内 role 不回查数据库——修改用户角色后，其已签发 token 在剩余有效期（默认 7 天）内仍按旧角色放行（提权同理存在最长 7 天的延迟生效）。管理账号变动后建议要求对方重新登录；更高安全等级需引入 token version（登出/改角色时踢全部会话）
+- **internal 接口**已双拦（网关 403 + 服务端 ADMIN 硬校验），但业务端口暴露仍属失守——网络隔离仍是第一道防线
 
 ### 2) 前端 + Nginx
 

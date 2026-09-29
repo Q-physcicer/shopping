@@ -43,8 +43,9 @@ public class IdWorker {
     private final static long timestampLeftShift = sequenceBits + workerIdBits + datacenterIdBits;
 
     private final static long sequenceMask = -1L ^ (-1L << sequenceBits);
-    /* 上次生产id时间戳 */
-    private static long lastTimestamp = -1L;
+    /* 上次生产id时间戳（P2 修复：原为 static，跨实例共享但 sequence 各自独立，
+       同 JVM 内多个 workerId 不同的实例在同一毫秒会生成重复 ID；改实例字段隔离） */
+    private long lastTimestamp = -1L;
     // 0，并发控制
     private long sequence = 0L;
 

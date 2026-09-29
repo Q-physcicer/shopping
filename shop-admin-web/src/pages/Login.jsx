@@ -17,7 +17,9 @@ export default function Login() {
         return;
       }
       message.success(`欢迎回来，${user.username}`);
-      window.location.href = '/';
+      // 回跳 401 前的页面（带 query 透传）；无 redirect 回首页
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      window.location.href = redirect && redirect.startsWith('/') ? redirect : '/';
     } catch (e) {
       message.error(e.message || '登录失败');
     } finally {
@@ -36,7 +38,7 @@ export default function Login() {
           <h2 style={{ margin: '8px 0 4px', color: '#2b2b38' }}>星选商城</h2>
           <div style={{ color: '#8c8ca6' }}>管理端登录</div>
         </div>
-        <Form onFinish={onFinish} initialValues={{ username: 'admin' }} size="large">
+        <Form onFinish={onFinish} size="large">
           <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
             <Input prefix={<UserOutlined />} placeholder="管理员用户名" />
           </Form.Item>

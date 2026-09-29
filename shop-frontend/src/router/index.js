@@ -30,18 +30,13 @@ const routes = [
     component: () => import('../views/SeckillView.vue')
   },
   {
-    path: '/about',
-    name: 'About',
-    component: () => import('../views/AboutView.vue')
-  },
-  {
     path: '/goods/details',
-    name: 'Details',
+    name: 'GoodsDetails',
     component: () => import('../views/DetailsView.vue')
   },
   {
     path: '/goods/seckillDetails',
-    name: 'Details',
+    name: 'SeckillDetails',
     component: () => import('../views/SeckillDetails.vue')
   },
   {
@@ -83,6 +78,46 @@ const routes = [
     meta: {
       requireAuth: true // 需要验证登录状态
     }
+  },
+  {
+    path: '/member',
+    component: () => import('../views/member/MemberCenter.vue'),
+    redirect: '/member/profile',
+    meta: {
+      requireAuth: true
+    },
+    children: [
+      {
+        path: 'profile',
+        name: 'MemberProfile',
+        component: () => import('../views/member/MemberProfile.vue'),
+        meta: { requireAuth: true }
+      },
+      {
+        path: 'aftersale',
+        name: 'MemberAftersale',
+        component: () => import('../views/member/MemberAftersale.vue'),
+        meta: { requireAuth: true }
+      },
+      {
+        path: 'address',
+        name: 'MemberAddress',
+        component: () => import('../views/member/MemberAddress.vue'),
+        meta: { requireAuth: true }
+      },
+      {
+        path: 'message',
+        name: 'MemberMessage',
+        component: () => import('../views/member/MemberMessage.vue'),
+        meta: { requireAuth: true }
+      }
+    ]
+  },
+  // 404 兜底（原无匹配时主区域静默空白，无提示无引导）
+  {
+    path: '*',
+    name: 'NotFound',
+    component: () => import('../views/NotFound.vue')
   }
 ]
 

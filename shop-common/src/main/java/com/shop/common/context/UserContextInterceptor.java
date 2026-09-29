@@ -18,10 +18,16 @@ public class UserContextInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String uid = request.getHeader(HEADER_USER_ID);
         if (uid != null && !uid.isBlank()) {
-            UserContext.set(new UserContext.Principal(
-                    Long.valueOf(uid),
-                    request.getHeader(HEADER_USER_NAME),
-                    request.getHeader(HEADER_USER_ROLE) == null ? "USER" : request.getHeader(HEADER_USER_ROLE)));
+            try {
+                UserContext.set(new UserContext.Principal(
+                        Long.valueOf(uid),
+                        request.getHeader(HEADER_USER_NAME),
+                        request.getHeader(HEADER_USER_ROLE) == null ? "USER" : request.getHeader(HEADER_USER_ROLE)));
+            } catch (NumberFormatException e) {
+                // 畸形身份 header：拒绝该请求而非 500（信任边界内防御）
+                response.setStatus(401);
+                return false;
+            }
         }
         return true;
     }

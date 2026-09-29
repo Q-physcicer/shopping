@@ -21,8 +21,8 @@ import java.util.Map;
  * order 内部统计接口（P5，admin 统计聚合经 Feign 调用）。
  * GMV 口径：已支付(status=1,3)订单的 productPrice*productNum。
  *
- * ⚠️ /order/internal/** 经网关对外可达（路由 /order/**），读写接口不能只靠"没人知道"防护——
- * 售后审批等有资金/状态语义的写操作必须在 order 端硬校验 ADMIN
+ * ⚠️ /order/internal/** 原经网关对外可达（路由 /order/**），现已在网关层 403；
+ * 网关之外（业务端口暴露/内部直连）的第二道闸：**所有**读写接口一律硬校验 ADMIN
  * （Feign 经 FeignIdentityInterceptor / 网关经 AuthGlobalFilter 两条路径都会注入 X-User-Role）。
  */
 @RestController
@@ -35,10 +35,25 @@ public class OrderInternalController {
     private OrderMapper orderMapper;
     @Autowired
     private AftersaleServiceImpl aftersaleService;
+    @Autowired
+    private com.shop.order.service.impl.UserMessageServiceImpl messageService;
+
+    /** 统一 ADMIN 硬校验（防业务端口暴露；网关 403 为第一道，此处为纵深防御） */
+    private Result requireAdmin() {
+        UserContext.Principal p = UserContext.get();
+        if (p == null || !p.isAdmin()) {
+            return Result.fail("无权访问内部接口（需管理员身份）", null);
+        }
+        return null;
+    }
 
     /** GMV 概览：总 GMV / 总订单数 / 待支付数 / 已取消数 + 近 N 日每日曲线 */
     @GetMapping("/stats/gmv")
     public Result gmv(@RequestParam(value = "days", defaultValue = "7") int days) {
+        Result denied = requireAdmin();
+        if (denied != null) {
+            return denied;
+        }
         Map<String, Object> data = new HashMap<>();
         data.put("totalGmv", jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(product_price * product_num),0) FROM `order` WHERE status IN (1,3)", Double.class));
@@ -61,20 +76,34 @@ public class OrderInternalController {
         return Result.success("success", data);
     }
 
-    /** 订单分页（管理端，status 可选过滤） */
+    /** 订单分页（管理端，status/orderId 可选过滤；返回 {list,total}） */
     @GetMapping("/page")
     public Result page(@RequestParam(value = "page", defaultValue = "1") int page,
                        @RequestParam(value = "size", defaultValue = "20") int size,
-                       @RequestParam(value = "status", required = false) Integer status) {
+                       @RequestParam(value = "status", required = false) Integer status,
+                       @RequestParam(value = "orderId", required = false) String orderId) {
+        Result denied = requireAdmin();
+        if (denied != null) {
+            return denied;
+        }
+        size = Math.max(1, Math.min(size, 100));
+        page = Math.max(page, 1);
         com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.shop.order.pojo.Order> w =
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
         if (status != null) {
             w.eq(com.shop.order.pojo.Order::getStatus, status);
         }
+        if (orderId != null && !orderId.isBlank()) {
+            w.like(com.shop.order.pojo.Order::getOrderId, orderId.trim());
+        }
         w.orderByDesc(com.shop.order.pojo.Order::getId);
-        w.last("LIMIT " + (Math.max(page - 1, 0)) * size + ", " + size);
+        Long total = orderMapper.selectCount(w);
+        w.last("LIMIT " + (page - 1) * size + ", " + size);
         List<com.shop.order.pojo.Order> rows = orderMapper.selectList(w);
-        return Result.success("success", rows);
+        Map<String, Object> data = new HashMap<>();
+        data.put("list", rows);
+        data.put("total", total);
+        return Result.success("success", data);
     }
 
     /** 售后分页（管理端，status 可选过滤：0待处理 1已退款 2已拒绝） */
@@ -82,6 +111,10 @@ public class OrderInternalController {
     public Result aftersalePage(@RequestParam(value = "page", defaultValue = "1") int page,
                                 @RequestParam(value = "size", defaultValue = "20") int size,
                                 @RequestParam(value = "status", required = false) Integer status) {
+        Result denied = requireAdmin();
+        if (denied != null) {
+            return denied;
+        }
         return Result.success("success", aftersaleService.pageAftersales(page, size, status));
     }
 
@@ -91,10 +124,11 @@ public class OrderInternalController {
      */
     @PostMapping("/aftersale/handle")
     public Result aftersaleHandle(@RequestBody Map<String, Object> body) {
-        UserContext.Principal p = UserContext.get();
-        if (p == null || !p.isAdmin()) {
-            return Result.fail("无权处理售后（需管理员身份）", null);
+        Result denied = requireAdmin();
+        if (denied != null) {
+            return denied;
         }
+        UserContext.Principal p = UserContext.get();
         String aftersaleId = body.get("aftersaleId") == null ? null : String.valueOf(body.get("aftersaleId"));
         String action = body.get("action") == null ? "" : String.valueOf(body.get("action"));
         String reason = body.get("reason") == null ? null : String.valueOf(body.get("reason"));
@@ -103,5 +137,31 @@ public class OrderInternalController {
             return Result.fail("action 必须为 approve 或 reject", null);
         }
         return aftersaleService.handle(p.userId().intValue(), aftersaleId, approve, reason);
+    }
+
+    /** 管理端标记完成（CAS 1→3；原状态 3 无任何代码路径可达，属永不可达状态） */
+    @PostMapping("/done")
+    public Result markDone(@RequestBody Map<String, Object> body) {
+        Result denied = requireAdmin();
+        if (denied != null) {
+            return denied;
+        }
+        String orderId = body.get("orderId") == null ? "" : String.valueOf(body.get("orderId")).trim();
+        if (orderId.isEmpty()) {
+            return Result.fail("orderId 不能为空", null);
+        }
+        int updated = orderMapper.markDoneIfPaid(orderId);
+        if (updated == 0) {
+            return Result.fail("仅已支付订单可标记完成", null);
+        }
+        // 状态变更通知用户
+        List<com.shop.order.pojo.Order> rows = orderMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.shop.order.pojo.Order>()
+                        .eq(com.shop.order.pojo.Order::getOrderId, orderId));
+        if (!rows.isEmpty()) {
+            messageService.push(rows.get(0).getUserId(), com.shop.order.pojo.UserMessage.TYPE_ORDER_DONE, "订单完成",
+                    "订单 " + orderId + " 已完成，感谢您的购买！");
+        }
+        return Result.success("已标记完成");
     }
 }

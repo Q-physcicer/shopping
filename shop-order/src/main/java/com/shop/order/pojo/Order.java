@@ -48,7 +48,16 @@ public class Order {
     /** 秒杀活动ID（秒杀单才有） */
     private Integer seckillId;
 
-    /** 兼容迁移代码的 7 参构造（不含新增三列，由调用方 setter 补充） */
+    /** 收货人姓名（下单时快照，V7 新增；存量单为 null） */
+    private String receiverName;
+
+    /** 收货人手机（下单时快照） */
+    private String receiverPhone;
+
+    /** 收货地址（省市区+详细，下单时快照） */
+    private String receiverAddress;
+
+    /** 兼容迁移代码的 7 参构造（不含新增列，由调用方 setter 补充） */
     public Order(Integer id, String orderId, Integer userId, Integer productId,
                  Integer productNum, Double productPrice, Long orderTime) {
         this.id = id;

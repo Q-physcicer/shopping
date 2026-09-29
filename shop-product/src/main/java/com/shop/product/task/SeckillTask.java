@@ -56,9 +56,20 @@ public class SeckillTask {
         List<Integer> productIds = productMapper.selectIds();
         Date time = getDate();
 
-        // 清空旧数据，重新生成当日全部场次（演示语义：库存/场次每日重置）
-        seckillTimeMapper.delete(new LambdaQueryWrapper<>());
-        seckillProductMapper.delete(new LambdaQueryWrapper<>());
+        // P1 修复：手动场（manual）整体保留——场次与其商品都不删；只清 auto 场及其商品。
+        // 原实现全删 seckill_time + seckill_product，管理员手动建的活动次日下午 3 点被无声清空。
+        List<SeckillTime> manualTimes = seckillTimeMapper.selectList(
+                new LambdaQueryWrapper<SeckillTime>().eq(SeckillTime::getSource, "manual"));
+        List<Integer> manualTimeIds = manualTimes.stream().map(SeckillTime::getTimeId).toList();
+        if (manualTimeIds.isEmpty()) {
+            seckillTimeMapper.delete(new LambdaQueryWrapper<>());
+            seckillProductMapper.delete(new LambdaQueryWrapper<>());
+        } else {
+            seckillTimeMapper.delete(new LambdaQueryWrapper<SeckillTime>()
+                    .notIn(SeckillTime::getTimeId, manualTimeIds));
+            seckillProductMapper.delete(new LambdaQueryWrapper<SeckillProduct>()
+                    .notIn(SeckillProduct::getTimeId, manualTimeIds));
+        }
 
         for (int i = 1; i < 24; i += 2) {
             long startTime = time.getTime() / 1000 * 1000 + 1000L * 60 * 60 * i;
@@ -67,6 +78,7 @@ public class SeckillTask {
             SeckillTime seckillTime = new SeckillTime();
             seckillTime.setStartTime(startTime);
             seckillTime.setEndTime(endTime);
+            seckillTime.setSource("auto");
             seckillTimeMapper.insert(seckillTime);
 
             // 随机选择 15 个商品
@@ -96,7 +108,7 @@ public class SeckillTask {
             }
             log.info("[SeckillTask] 完成时间段 {} 的秒杀商品配置", i);
         }
-        log.info("[SeckillTask] 当日秒杀活动生成完毕");
+        log.info("[SeckillTask] 当日秒杀活动生成完毕（保留手动场 {} 个）", manualTimes.size());
     }
 
     private Date getDate() {

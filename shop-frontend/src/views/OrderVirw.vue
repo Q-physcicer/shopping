@@ -20,7 +20,7 @@
 
     <!-- 我的订单主要内容 -->
     <div class="order-content" v-if="orders.length>0">
-      <div class="content" v-for="(item,index) in orders" :key="index">
+      <div class="content" v-for="(item,index) in orders" :key="item[0].orderId">
         <ul>
           <!-- 我的订单表头 -->
           <li class="order-info">
@@ -51,7 +51,7 @@
           <li class="product-list" v-for="(product,i) in item" :key="i">
             <div class="pro-img">
               <router-link :to="{ path: '/goods/details', query: {productID:product.productId} }">
-                <img :src="$target + product.productPicture" />
+                <img v-imgerror :src="$target + product.productPicture" />
               </router-link>
             </div>
             <div class="pro-name">
@@ -89,6 +89,7 @@
       <div class="empty">
         <h2>您的订单还是空的！</h2>
         <p>快去购物吧！</p>
+        <el-button type="primary" round class="empty-cta" @click="$router.push('/goods')">去逛逛</el-button>
       </div>
     </div>
     <!-- 订单为空的时候显示的内容END -->
@@ -289,6 +290,10 @@ export default {
 }
 /* 订单列表CSS END */
 
+.order-empty .empty .empty-cta {
+  background: #5b6ef5;
+  border-color: #5b6ef5;
+}
 /* 订单为空的时候显示的内容CSS */
 .order .order-empty {
   width: 1225px;

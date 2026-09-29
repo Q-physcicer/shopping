@@ -42,11 +42,19 @@ public class SearchController {
         if (keyword == null || keyword.isBlank()) {
             return Result.fail("搜索关键词不能为空", null);
         }
+        // 分页边界钳制（防 size=99999 拖库；对齐 AftersaleServiceImpl 既有口径）
+        size = Math.max(1, Math.min(size, 100));
+        page = Math.max(page, 1);
         return Result.success("success", searchService.search(keyword.trim(), categoryId, sort, page, size));
     }
 
     @PostMapping("/product/internal/es/rebuild")
     public Result rebuild() {
+        // ADMIN 硬校验：全量重建是重资源操作，不能任由普通用户经网关触发（admin 经 Feign 透传 ADMIN 可正常调用）
+        com.shop.common.context.UserContext.Principal p = com.shop.common.context.UserContext.get();
+        if (p == null || !p.isAdmin()) {
+            return Result.fail("无权重建索引（需管理员身份）", null);
+        }
         try {
             long n = searchService.rebuild();
             return Result.success("索引重建成功，共 " + n + " 条");

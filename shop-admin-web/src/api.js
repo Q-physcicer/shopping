@@ -17,9 +17,12 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => {
-    // Result 包装：code=1 成功
+    // Result 包装：code=1 成功；成功 msg 附到 __msg（页面可取后端 reunited 文案，如"重建成功，共 N 条"）
     if (res.data && typeof res.data.code === 'number') {
       if (res.data.code === 1) {
+        if (res.data.data !== null && typeof res.data.data === 'object') {
+          try { res.data.data.__msg = res.data.msg; } catch { /* 只读对象忽略 */ }
+        }
         return res.data.data;   // 直接返回 data，页面代码不用层层解包
       }
       return Promise.reject(new Error(res.data.msg || '操作失败'));
@@ -31,7 +34,8 @@ api.interceptors.response.use(
       localStorage.removeItem('ADMIN_JWT');
       localStorage.removeItem('ADMIN_USER');
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+        // 带 redirect：登录后回跳原页面（原直接踢首页，筛选/页码全丢）
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
       }
       return Promise.reject(new Error((err.response.data && err.response.data.msg) || '请先登录'));
     }

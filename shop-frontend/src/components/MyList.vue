@@ -11,7 +11,7 @@
           <i class="el-icon-close delete" slot="reference" v-show="isDelete"></i>
         </el-popover>
         <router-link :to="{ path: '/goods/details', query: {productID:item.productId} }">
-          <img :src="$target +item.productPicture" alt />
+          <img v-imgerror :src="$target +item.productPicture" alt />
           <h2>{{item.productName}}</h2>
           <h3>{{item.productTitle}}</h3>
           <p>
@@ -62,14 +62,8 @@ export default {
         .delete("/api/collect/user/" + product_id)
         .then(res => {
           if(res.data.code){
-            // 删除成功
-            // 删除删除列表中的该商品信息
-            for (let i = 0; i < this.list.length; i++) {
-              const temp = this.list[i];
-              if (temp.productId == product_id) {
-                //this.list.splice(i, 1);
-              }     
-            }
+            // 删除成功：通知父组件移除该行（vue 单向数据流，子组件不直接改 props）
+            this.$emit("item-deleted", product_id);
             // 提示删除成功信息
             this.notifySucceed(res.data.msg);
           }else{
@@ -77,8 +71,8 @@ export default {
             this.notifyError(res.data.msg);
           }
         })
-        .catch(err => {
-          return Promise.reject(err);
+        .catch(() => {
+          this.notifyError("网络异常，删除失败请重试");
         });
     }
   }

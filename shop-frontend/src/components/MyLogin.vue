@@ -96,13 +96,23 @@ export default {
             .then(res => {
               // “1”代表登录成功，其他的均为失败
               if (res.data.code > 0) {
+                const user = res.data.data;
+                // 权限控制：管理员账号请走管理端，不进入购物端
+                if (user && user.role === "ADMIN") {
+                  this.$refs["ruleForm"].resetFields();
+                  // 登录接口已 Set-Cookie JWT，需清掉/加入黑名单，避免残留可用 token
+                  this.$axios.post("/api/user/logout").catch(() => {});
+                  document.cookie = "XM_TOKEN=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                  this.notifyError("管理员账号请通过管理端登录");
+                  return;
+                }
                 // 隐藏登录组件
                 this.isLogin = false;
                 // 登录信息存到本地
                 // let user = JSON.stringify(res.data.data);
                 // localStorage.setItem("user", user);
                 // 登录信息存到vuex
-                this.setUser(res.data.data);
+                this.setUser(user);
                 // 弹出通知框提示登录成功信息
                 this.notifySucceed(res.data.msg);
               } else {

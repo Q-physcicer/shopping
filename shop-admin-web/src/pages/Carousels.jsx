@@ -9,6 +9,7 @@ const IMG_HOST = '/';
 export default function Carousels() {
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   const load = () => {
@@ -19,13 +20,19 @@ export default function Carousels() {
 
   const submit = async () => {
     const v = await form.validateFields();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await api.post('/admin/carousel', { imgPath: v.imgPath, describes: v.describes || null });
       message.success('轮播已新增（购物端即时生效）');
       setOpen(false);
       form.resetFields();
       load();
-    } catch (e) { message.error(e.message); }
+    } catch (e) {
+      message.error(e.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const del = async (id) => {
@@ -64,14 +71,15 @@ export default function Carousels() {
         />
       </Card>
 
-      <Modal title="新增轮播" open={open} onCancel={() => setOpen(false)} onOk={submit} okText="保存" cancelText="取消">
+      <Modal title="新增轮播" open={open} onCancel={() => setOpen(false)} onOk={submit}
+        okText="保存" cancelText="取消" confirmLoading={submitting}>
         <Form form={form} labelCol={{ span: 5 }}>
-          <Form.Item name="imgPath" label="图片路径" rules={[{ required: true }]}
-            extra="相对路径，如 public/imgs/cms_5.jpg（图片请先放置到静态资源目录）">
-            <Input placeholder="public/imgs/xxx.jpg" />
+          <Form.Item name="imgPath" label="图片路径" rules={[{ required: true, message: '请输入图片路径' }]}
+            extra="相对路径，如 imgs/carousel/x.svg（图片请先放置到购物端静态资源 public/imgs 目录）">
+            <Input placeholder="imgs/carousel/xxx.svg" maxLength={50} />
           </Form.Item>
           <Form.Item name="describes" label="描述">
-            <Input placeholder="可选" />
+            <Input placeholder="可选" maxLength={50} />
           </Form.Item>
         </Form>
       </Modal>

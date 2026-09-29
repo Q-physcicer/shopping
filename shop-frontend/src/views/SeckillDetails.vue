@@ -11,19 +11,6 @@
     <div class="page-header">
       <div class="title">
         <p>{{productDetails.productName}}</p>
-        <div class="list">
-          <ul>
-            <li>
-              <router-link to>概述</router-link>
-            </li>
-            <li>
-              <router-link to>参数</router-link>
-            </li>
-            <li>
-              <router-link to>用户评价</router-link>
-            </li>
-          </ul>
-        </div>
       </div>
     </div>
     <!-- 头部END -->
@@ -34,7 +21,7 @@
       <div class="block">
         <el-carousel height="560px" v-if="productPicture.length>1">
           <el-carousel-item v-for="item in productPicture" :key="item.id">
-            <img style="height:560px;" :src="$target + item.productPicture" :alt="item.intro" />
+            <img style="height:560px;" v-imgerror :src="$target + item.productPicture" :alt="item.intro" />
           </el-carousel-item>
         </el-carousel>
         <div v-if="productPicture.length==1">
@@ -114,8 +101,17 @@ export default {
       productPicture: "", // 商品图片
       seckillState:0, // 秒杀状态 0 未开始，1进行中，2结束
       remainSeconds:0, // 秒杀倒计时
-      testTime:0
+      testTime:0,
+      cdTimer: null,   // 倒计时 setTimeout 句柄（P2：可清理）
+      pollTimer: null  // 抢购结果轮询句柄（P2：可清理）
     };
+  },
+  // P2：keep-alive 离开页面停止倒计时/轮询（原后台空转）
+  deactivated() {
+    this.stopTimers();
+  },
+  beforeDestroy() {
+    this.stopTimers();
   },
   // 通过路由获取商品id
   activated() {
@@ -125,7 +121,6 @@ export default {
     if (this.$route.query.seckillID != undefined) {
       this.seckillID = this.$route.query.seckillID;
     }
-    // console.log(new Date().getTime());
   },
   watch: {
     // 监听商品id的变化，请求后端获取商品数据
@@ -185,17 +180,29 @@ export default {
         });
     },
     countDown() {
-        let _this=this;
+        const _this = this;
         if (_this.testTime > 0) {
             _this.testTime = _this.testTime - 1;
-            setTimeout(function() {
-                _this.countDown(_this.testTime);
+            // P2：句柄存组件，离开页面统一清理（原离开后倒计时链继续在后台跑）
+            _this.cdTimer = setTimeout(function() {
+                _this.countDown();
             },1000)
         }else if (_this.testTime <= 0) {
             this.seckillState = 1;
             this.dis = false;
         }
-        
+
+    },
+    // P2：keep-alive 离开页面时停止倒计时与结果轮询（原后台空转）
+    stopTimers() {
+        if (this.cdTimer) {
+            clearTimeout(this.cdTimer);
+            this.cdTimer = null;
+        }
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
     },
     // 秒杀抢购（P2：异步排队 + 结果轮询）
     addSeckill() {
@@ -226,27 +233,35 @@ export default {
     pollSeckillResult() {
       const maxRetry = 60; // 最多轮询 60 次 × 2s = 2 分钟
       let retry = 0;
-      const timer = setInterval(() => {
+      this.stopTimers();
+      this.pollTimer = setInterval(() => {
         retry++;
         this.$axios
           .get("/api/seckill/product/result/" + this.seckillID)
           .then(res => {
             const status = res.data.data;
             if (status === "CONSUMED") {
-              clearInterval(timer);
+              clearInterval(this.pollTimer);
+              this.pollTimer = null;
+              // P2：结果出来即恢复可交互（原按钮永久禁用，无法重试或看其他场次）
+              this.dis = false;
               this.notifySucceed("恭喜！抢购成功，订单已生成，请前往订单页支付");
             } else if (status === "FAILED") {
-              clearInterval(timer);
+              clearInterval(this.pollTimer);
+              this.pollTimer = null;
+              this.dis = false;
               this.notifyError("很遗憾，排队未成功，库存已回滚");
             } else if (retry >= maxRetry) {
-              clearInterval(timer);
+              clearInterval(this.pollTimer);
+              this.pollTimer = null;
               this.notifyError("排队超时，请稍后在订单页查看结果");
               this.dis = false;
             }
           })
           .catch(() => {
             if (retry >= maxRetry) {
-              clearInterval(timer);
+              clearInterval(this.pollTimer);
+              this.pollTimer = null;
               this.dis = false;
             }
           });
@@ -276,7 +291,7 @@ export default {
   }
 };
 </script>
-<style>
+<style scoped>
 /* 头部CSS */
 #details .page-header {
   height: 64px;

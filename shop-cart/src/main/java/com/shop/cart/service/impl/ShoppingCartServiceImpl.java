@@ -47,7 +47,13 @@ public class ShoppingCartServiceImpl extends ServiceImpl<ShoppingCartMapper, Sho
 
                 if (one != null) {
                         if (one.getNum() >= 5) {
-                                throw new XmException(ExceptionEnum.ADD_CART_NUM_UPPER);
+                                // 限购超限不再抛异常（原走 XmException→code=0，前端 case "003" 成死分支，
+                                // 按钮永不置灰）；改为返回 num=5 的实体让 controller 拼 "003" 业务码
+                                CartVo limited = getCartVo(one);
+                                limited.setUpdateNum(false);
+                                limited.setNum(5);
+                                limited.setUpdateMessage("该商品购物车达到上限");
+                                return limited;
                         }
                         Integer version = one.getVersion();
                         one.setNum(one.getNum() + 1);
@@ -85,15 +91,27 @@ public class ShoppingCartServiceImpl extends ServiceImpl<ShoppingCartMapper, Sho
         }
 
         public void updateCartNum(String cartId, String userId, String num) {
+                // 数量边界校验（原缺陷：负数/超量可落库，结算时生成负数订单并反向增加库存）
+                int n;
+                try {
+                        n = Integer.parseInt(num);
+                } catch (NumberFormatException e) {
+                        throw new XmException("数量格式错误");
+                }
+                if (n < 1 || n > 5) {
+                        throw new XmException("购买数量须在 1-5 之间");
+                }
                 ShoppingCart cart = new ShoppingCart();
                 cart.setId(Integer.parseInt(cartId));
                 cart.setUserId(Integer.parseInt(userId));
-                cart.setNum(Integer.parseInt(num));
+                cart.setNum(n);
                 try {
                         boolean updateResult = this.updateById(cart);
                         if (!updateResult) {
                                 throw new XmException(ExceptionEnum.UPDATE_CART_ERROR);
                         }
+                } catch (XmException xe) {
+                        throw xe;
                 } catch (Exception e) {
                         e.printStackTrace();
                         throw new XmException(ExceptionEnum.UPDATE_CART_ERROR);

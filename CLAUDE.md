@@ -21,13 +21,13 @@ shopping/
 ├── shop-chat/     :8106   # 双Agent + MCP Server(SSE)
 ├── shop-frontend/         # Vue2 购物端 (dev 7080)
 ├── shop-admin-web/        # React 管理端 (dev 7090)
-└── sql/                   # DDL（V2__upgrade.sql 为增量）
+└── sql/                   # DDL（shop.sql 全量初始化，V1~V7 已整合归档 .trash）
 ```
 
 ### 关键技术决策（已拍板，不要更改）
 
 - **版本组合**：Spring Boot 3.4.6 + Spring Cloud 2024.0.1 + Spring Cloud Alibaba 2023.0.3.4 + Spring AI 1.0.0 + jjwt 0.12.6 + MyBatis-Plus 3.5.10，JDK 17
-- **7 服务不分库**：共用 `shopmanagement` 单库，按表归属读写（product 拥有 product/category/carousel/product_picture/seckill_*；order 拥有 order/seckill_message_record；user 拥有 user；cart 拥有 shopping_cart/collect）。跨域写必须走 Feign（如下单扣库存 → `ProductClient.decrStock`）
+- **7 服务不分库**：共用 `shop` 单库（V1~V7 增量已整合为 sql/shop.sql 全量脚本，历史库名 shopmanagement），按表归属读写（product 拥有 product/category/carousel/product_picture/seckill_*；order 拥有 order/seckill_message_record；user 拥有 user；cart 拥有 shopping_cart/collect）。跨域写必须走 Feign（如下单扣库存 → `ProductClient.decrStock`）
 - **鉴权**：JWT HS256，payload `{uid, username, role, jti}`，exp 7 天；Cookie 名 `XM_TOKEN` 保留但值换 JWT；网关统一鉴权后注入 `X-User-Id/X-User-Role` header（必须先剥客户端伪造的同名 header）；Controller 一律从 header 取身份，禁止路径传 userId
 - **Agent 工具调用全走 Feign**，不直连 DB；用户身份经 `ChatClient.prompt().toolContext()` 注入，工具用 `ToolContext` 取，绝不让模型编造 userId
 - **MCP Server**：`spring-ai-starter-mcp-server-webmvc`（不能用 webflux 版，SSE controller 是 webmvc + Flux 混用），8106 直连不走网关
@@ -160,6 +160,50 @@ shopping/
 - **体验修复**：①Markdown 渲染——Vue2 用 `marked@4 + DOMPurify`（bot 气泡 v-html 消毒，用户气泡纯文本；vue-markdown 未维护不选用），React 用 `react-markdown + remark-gfm`（渲染为元素不输出 raw HTML 天然防 XSS，禁加 rehype-raw）；②停止生成——前端 `EventSource.close()` 不触发 onerror/done 必须自行 finish 收尾，后端 stream() 加 `doOnCancel/doFinally`；③placeOrder 工具 num 钳制 `Math.min(Math.max(num,1),5)` 防模型幻觉值；④shop-admin 删除死配置（`spring-ai-starter-model-openai` 依赖 + application.yml/local.yml 的 `spring.ai` 块，无任何 ChatModel 代码引用）
 - **验收**：售后服务闭环 9 步全绿（下单→支付→申请→重复拦截→分页→拒绝→CAS二次拦截→查结果）；越权(USER 打 handle)被 order 端硬校验拦截；画像提炼+跨会话注入 profileInj=y；后端 `mvn clean package` 全绿；双前端 build 通过
 - 新增前端文件：`shop-admin-web/src/pages/Aftersales.jsx`（售后审批页，菜单路由 /aftersales，CustomerServiceOutlined 图标）；后端新增 `AftersaleRecord/AftersaleVo/AftersaleMapper/AftersaleServiceImpl/AftersaleController` + `shop-feign-api/AftersaleApplyRequest` + `shop-chat/profile/UserProfileService`
+
+## P10 三期修复：资损/安全加固 + 交互修复 + 体验质量（2026-09-28）
+
+全面可用性评估（3 路并行排查+逐项复核）后按 P0/P1/P2 三期修复约 40 项。
+
+### P0 资损/安全（已冒烟验证全绿）
+- **下单不信任客户端**：`POST /order` 新契约 `{items:[{productId,num}], addressId}`（`OrderCreateRequest`），价格一律服务端回查 `productSellingPrice`（实测 price=0.01 落库 1499）；num 钳 1-5（负数/99 拒绝）；`updateCartNum` 同口径（堵负数下单反向加库存）
+- **库存乐观锁重试耗尽必抛**（原静默放行=超卖）；**支付三连写事务化**：`OrderServiceImpl.payMock` @Transactional（CAS→流水→消息），PayController 薄壳
+- **internal 双拦**：网关 AuthGlobalFilter 对 `/order/internal/`、`/product/internal/`、`/user/internal/` 一律 403；服务端（order/user/product 的 internal 控制器 + SearchController.rebuild）补 ADMIN 硬校验（纵深防御，admin 经 FeignIdentityInterceptor 透传不受影响）
+- **分页插件**：MP 3.5.10 需另引 `mybatis-plus-jsqlparser`（父 POM 管版本，common provided + 5 业务服务 compile）；`PaginationInnerInterceptor(MYSQL).maxLimit=200`——修复"前 8 条"实际全表（此前热销榜返回全部 33 条）
+- **地址随单落库（V7 DDL）**：order 表加 receiver_name/phone/address 三快照列；OrderServiceImpl 经 Feign 回查 user 地址（`GET /user/address/internal/{id}` 与 `/internal/default`，本人归属校验），无地址不阻塞交易；收银台 cashier 返回收件信息
+- **登出黑名单覆盖 GET 白名单**：`passWithOptionalIdentity` 同样查 `auth:logout:{jti}`，命中按匿名放行（堵"登出后旧 JWT 驱动 Agent 代客写"）
+- **角色切换防护**：不能改自己、最后一名 ADMIN 不可降级；角色变更的 7 天 token 滞后窗口写入 deploy/README.md 安全线
+- **V7__order_hardening.sql**：order 表 3 快照列 + shopping_cart/collect 去重加 `UNIQUE(user_id, product_id)`（收藏重复插入后 delete 删 2 行报错、永远删不干净）+ seckill_time.source 列（auto/manual）
+
+### P1 功能正确性 + 交互主链
+- **购物车 fall-through**：success("002") 缺 return 被 001 覆盖（前端 vuex 塞 num=null）已修；限购超限返回业务码 "003"（原抛异常→code=0，前端 case"003" 死分支、按钮永不置灰）
+- **商品编辑假成功**：AdminProductController 白名单补 productName/categoryId/productPicture + 数字校验（非数字/负价/负库存拒绝）+ 乐观锁返回值检查（并发冲突如实报错）；Title 截断统一 60（对齐 V4 列宽）
+- **管理订单能力**：`/order/internal/page` 返回 {list,total} + orderId like 搜索 + size 钳 100；`POST /order/internal/done`（CAS 1→3，状态 3 原永不可达）+ admin 转发 + Orders 页"标记完成"
+- **秒杀管理正轨化**：admin 直插 product 域表改 Feign 调 `POST /seckill/admin/add`（product 端写库+校验 价格≤售价/库存≤商品库存+**失效列表缓存** `seckill:product:list:{timeId}`）；SeckillTask 每日重建只清 auto 场，manual 场与其商品保留（原手动场次日下午 3 点被无声清空）
+- **站内信完善**：下单成功也 push（TYPE_ORDER_CREATED，原只有取消/支付有）；`listByUser` LIMIT 100；readAll 返回真实标记数（原 >=0 恒真）
+- **购物端交互**：结算/售后/资料/加购全部防连点（submitting+disabled/loading）；member 五页 14 处 `catch(()=>{})` 清零（网络失败可见提示）；地址/手机表单校验（rules+maxlength 对齐列宽）；删除地址/消息加 $confirm；收藏删除即时消失（MyList splice 被注释→emit 父组件移除，MySeckillList 同修+categoryId/snake_case bug+划线价比较字段）；未读徽标 30s 轮询+refresh-unread 全局事件（支付后即时刷新）；退出登录离开受限页+401 静默；购物车未勾选去结算给提示
+- **管理端交互**：Products 筛选 stale closure（setTimeout(load) 旧闭包→useEffect 依赖数组）；编辑表单先 resetFields；Dashboard 数据源失败如实显示（原静默 ¥0 假数据+无限 Spin）+ days 7/30 切换；Orders 真 total+订单号搜索+loading；AgentChat reset 走 api 实例（原生 fetch 假成功）；axios 拦截器 Success.msg 附 `__msg`（Settings/Users/Products 消费真实文案）；401 带 ?redirect= 回跳原页
+
+### P2 体验/质量
+- 购物端：404 兜底（NotFound.vue + `path:'*'`）；路由重名 Details→GoodsDetails/SeckillDetails；ErrorPage 加文案+返回按钮；订单/购物车/收藏空态"去逛逛"CTA；价格排序升降切换（sortAsc 真启用）；秒杀 tabs 初始自动选中+SeckillView 全量重写（清 60+ 行死代码）；秒杀详情倒计时/轮询句柄可清理（deactivated/beforeDestroy）+ 抢购结果后恢复可交互；PayView 轮询同修；全局 `v-imgerror` 指令+placeholder.svg（9 处应用）；SearchView 空关键词提示；HomeView PROMO 取模兜底；Details/SeckillDetails style 加 scoped+空目标死链删除；vue-markdown/AboutView/MyMarkdown 死代码移 .trash
+- 管理端：ErrorBoundary（渲染异常降级）；Login 去 admin 预填；vite 代理 `/imgs`→7080（缩略图/轮播预览不再裂）；Seckill 状态 60s 自动刷新+商品下拉可搜索+来源列（手动场/定时场标签）；dayjs 死依赖删+`npm run start` 别名补
+- 后端/通用：收藏/购物车 UNIQUE 竞态（V7）；默认地址 clearDefault 原子化+isDefault 枚举钳制；IdWorker.lastTimestamp 去 static（原跨实例共享致同毫秒撞号）；SearchController/用户分页 size 钳 100；XmExceptionHandler 兜底（NumberFormatException/DataIntegrityViolation→"参数错误"而非裸 500 跳 /error 丢表单）；UserClient.getByUsername 幽灵方法删；shop-admin 死代码（OrderMapper/pojo/SeckillProduct 整套）+ pom 死依赖（fastjson/redis/commons-pool2）；AdminTools.callAs parse 兜底；画像字段截 200 字+写入续期（防超长文本注入 system prompt）；网关 CORS 收紧 `CORS_ORIGINS` env（默认 localhost:7080/7090，原 `"*"+credentials`）；JwtUtil 默认密钥启动告警
+
+### 坑与事实
+- **XmException 补单 String 构造**（message 透传），@AllArgsConstructor 现生成 (ExceptionEnum,String) 双参——存量 `new XmException(enum)` 靠补的单参构造兼容
+- **SeckillView/CollectView 的 activated 每次进入重拉数据**（keep-alive 正确姿势）；MyList 删除后 emit `item-deleted` 由父组件 splice（vue/no-mutating-props）
+- **svc.sh restart 有 stop 优雅退出时序竞态**：stop→立即 start 会 [SKIP]，需 sleep 10-15s 再补 start
+- admin uid 以 user 表为准（admin=6）；管理端角色测试勿用猜测 uid
+
+## P11 SQL 整合 + 库名 shop（2026-09-29）
+
+- **sql/shop.sql**：V1~V7 七个增量脚本整合为单文件全量初始化（最终态合并：V1 表结构 + V2/V3/V4/V7 列改/索引/唯一键并进 CREATE TABLE + V4 百货数据 + V1 用户种数据）。头部 `CREATE DATABASE IF NOT EXISTS shop` + `USE shop`（根治 V1 不指定库落错库的坑）；DROP+CREATE 可重复执行；**整合态作废项**（注意勿照搬旧增量逻辑）：V2 的 UPDATE role/轮播路径/存量订单与「INSERT admin WHERE NOT EXISTS」兜底、V7 的去重 DELETE——最终态数据直接以终值 INSERT。15 张表与现库 informaton_schema 结构对拍（列/索引）**完全一致**；临时库 sed 换名纯净执行验证通过（15 表/行数 8:33:3:2:5:20:0 全对）
+- **修正 V1 遗留 bug**：admin 密码哈希原为 `MD5('a123456')`（与用户 a123456/bababa 同哈希），并非文档承诺的 admin123——shop.sql 已改为 `MD5('admin123')`，新环境 admin/admin123 开箱即用（登录时 BCrypt 透明升级逻辑兜底）
+- **product_picture 只建表不插数据**：V4 百货化后遗留 110 条死路径数据（public/imgs/phone/picture/ 已不存在）不再种子
+- **库名引用全局替换 shopmanagement→shop**：5 个 DB 服务 application.yml 的 DB_URL 默认值、scripts/p2-seed.sql（USE 行删除，命令行选库）、p2-verify.sh / p2-timeout-verify.sh（`${DB_NAME:-shop}`，本地旧库 `DB_NAME=shopmanagement`）、deploy/README.md（组件表/DB_URL 默认值/DDL 段单命令重写，顺带修正 MySQL 版本备注 8.4.11、ES 备注对齐 P7 事实）；CLAUDE.md 结构树与架构决策段同步——**P1~P10 历史段一字未改**（对 V 文件名的引用是史实）
+- **本地不迁移数据库**：本地 5 个服务的 application-local.yml（gitignored）加 `spring.datasource.url` 行覆盖连 shopmanagement（既有 62 用户/bkt 压测账号/订单/秒杀场 803 等本地数据原样保留）；git 默认 shop——他人 clone 后建库/连库均为 shop，本地与远端两套并行互不干扰
+- **历史坑归档发现**：现库 V2/V5/V6 的中文列注释为双重编码 mojibake 或 `?`（V7 后执行的部分是乱码、部分正常——V2 用户表注释×4 脏、V5/V6 整表注释脏；源于当时客户端未带 `--default-character-set=utf8mb4`）。shop.sql 从干净源重写所有注释；本地库如需扶正可对受影响列执行同定义 MODIFY COLUMN 换正常注释（非必需，不影响功能）
+- V1~V7 归档至 `.trash/sql-legacy/`（shop.sql 验证通过后执行；V1~V5 git 显示 deleted、V6/V7 平移无记录，删除记录留给用户提交时生效）
 
 ## 构建与验证
 

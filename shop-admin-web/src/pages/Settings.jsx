@@ -7,7 +7,8 @@ export default function Settings() {
   const rebuild = async () => {
     try {
       const res = await api.post('/admin/es/rebuild');
-      message.success(typeof res === 'string' ? res : '索引重建已触发');
+      // P1：后端 Result.msg 附带重建条数，优先展示（原 res 为 null，真实结果文案永不可见）
+      message.success((res && res.__msg) || '索引重建已触发');
     } catch (e) {
       message.error(e.message);
     }

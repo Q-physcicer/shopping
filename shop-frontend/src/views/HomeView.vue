@@ -28,7 +28,8 @@
           <div class="box-bd">
             <div class="promo-list">
               <router-link :to="{ path: '/goods', query: { categoryId: sec.categoryId } }">
-                <img :src="$target + promoImgs[idx]" />
+                <!-- P2：分类顺序变动时促销图取模兜底，不再与分类错位 -->
+                <img :src="$target + (promoImgs[idx % promoImgs.length] || 'imgs/promo/cat-digital.svg')" />
               </router-link>
             </div>
             <div class="list">

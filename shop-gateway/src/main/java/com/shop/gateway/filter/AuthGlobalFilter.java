@@ -66,6 +66,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         String path = request.getPath().value();
         HttpMethod method = request.getMethod();
 
+        // 0) internal 接口一律不对公网开放（admin 的 Feign 走 Nacos 直连不经网关）
+        if (path.startsWith("/order/internal/") || path.startsWith("/product/internal/")
+                || path.startsWith("/user/internal/")) {
+            return reject(exchange, HttpStatus.FORBIDDEN, "内部接口不对公网开放");
+        }
+
         // 1) 白名单
         if (isPublic(path) || (HttpMethod.GET.equals(method) && isPublicGet(path))) {
             // 携带合法 token 的匿名接口也注入身份（如 chat Agent 判断是否可代客下单）
@@ -108,25 +114,35 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                 });
     }
 
-    /** 公开接口：有合法 token 就注入身份，没有就匿名透传（同样必须剥伪造 header） */
+    /** 公开接口：有合法 token 且未登出黑名单就注入身份，否则按匿名透传（同样必须剥伪造 header） */
     private Mono<Void> passWithOptionalIdentity(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String token = extractToken(request);
         if (token == null || token.isBlank()) {
             return chain.filter(exchange.mutate().request(stripClientIdentityHeaders(request)).build());
         }
+        Claims claims;
         try {
-            Claims claims = jwtUtil.parse(token);
-            ServerHttpRequest mutated = stripClientIdentityHeaders(request).mutate()
-                    .header("X-User-Id", claims.getSubject())
-                    .header("X-User-Name", String.valueOf(claims.get("username")))
-                    .header("X-User-Role", (String) claims.get("role"))
-                    .build();
-            return chain.filter(exchange.mutate().request(mutated).build());
+            claims = jwtUtil.parse(token);
         } catch (Exception e) {
             // 公开接口不拒绝无效 token，按匿名放行
             return chain.filter(exchange.mutate().request(stripClientIdentityHeaders(request)).build());
         }
+        String jti = claims.getId();
+        return redis.hasKey(BLACKLIST_PREFIX + jti)
+                .flatMap(blacklisted -> {
+                    if (Boolean.TRUE.equals(blacklisted)) {
+                        // 已登出的 token：不再注入身份，按匿名放行（堵住登出后旧 JWT 仍驱动 Agent 代客写操作）
+                        return chain.filter(exchange.mutate()
+                                .request(stripClientIdentityHeaders(request)).build());
+                    }
+                    ServerHttpRequest mutated = stripClientIdentityHeaders(request).mutate()
+                            .header("X-User-Id", claims.getSubject())
+                            .header("X-User-Name", String.valueOf(claims.get("username")))
+                            .header("X-User-Role", (String) claims.get("role"))
+                            .build();
+                    return chain.filter(exchange.mutate().request(mutated).build());
+                });
     }
 
     private ServerHttpRequest stripClientIdentityHeaders(ServerHttpRequest request) {

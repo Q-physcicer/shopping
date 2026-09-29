@@ -11,19 +11,6 @@
     <div class="page-header">
       <div class="title">
         <p>{{productDetails.productName}}</p>
-        <div class="list">
-          <ul>
-            <li>
-              <router-link to>概述</router-link>
-            </li>
-            <li>
-              <router-link to>参数</router-link>
-            </li>
-            <li>
-              <router-link to>用户评价</router-link>
-            </li>
-          </ul>
-        </div>
       </div>
     </div>
     <!-- 头部END -->
@@ -34,7 +21,7 @@
       <div class="block">
         <el-carousel height="560px" v-if="productPicture.length>1">
           <el-carousel-item v-for="item in productPicture" :key="item.id">
-            <img style="height:560px;" :src="$target + item.productPicture" :alt="item.intro" />
+            <img style="height:560px;" v-imgerror :src="$target + item.productPicture" :alt="item.intro" />
           </el-carousel-item>
         </el-carousel>
         <div v-if="productPicture.length==1">
@@ -106,7 +93,8 @@ export default {
       dis: false, // 控制“加入购物车按钮是否可用”
       productID: "", // 商品id
       productDetails: "", // 商品详细信息
-      productPicture: "" // 商品图片
+      productPicture: "", // 商品图片
+      adding: false // 加购请求进行中（防连点）
     };
   },
   // 通过路由获取商品id
@@ -153,10 +141,12 @@ export default {
         this.$store.dispatch("setShowLogin", true);
         return;
       }
+      // 防连点：快速双击会触发后端合并+1 多加一份（且叠加后端 fall-through 时污染 vuex）
+      if (this.adding) return;
+      this.adding = true;
       this.$axios
         .post("/api/cart/product/" + this.productID)
         .then(res => {
-          
           switch (res.data.code) {
             case "001":
               // 新加入购物车成功
@@ -169,7 +159,7 @@ export default {
               this.notifySucceed(res.data.msg);
               break;
             case "003":
-              // 商品数量达到限购数量
+              // 商品数量达到限购数量（后端已改为返回 003 业务码，此分支恢复生效）
               this.dis = true;
               this.notifyError(res.data.msg);
               break;
@@ -177,8 +167,11 @@ export default {
               this.notifyError(res.data.msg);
           }
         })
-        .catch(err => {
-          return Promise.reject(err);
+        .catch(() => {
+          this.notifyError("网络异常，加购失败请重试");
+        })
+        .finally(() => {
+          this.adding = false;
         });
     },
     addCollect() {
@@ -205,7 +198,7 @@ export default {
   }
 };
 </script>
-<style>
+<style scoped>
 /* 头部CSS */
 #details .page-header {
   height: 64px;

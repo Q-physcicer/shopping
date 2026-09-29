@@ -40,6 +40,12 @@ public class ShoppingCartController {
                 if (cartVo != null) {
                         if (cartVo.isUpdateNum()) {
                                 resultMessage.success("002", "添加购物车成功", cartVo.getUpdateMessage());
+                                return resultMessage;   // 修复 fall-through：原缺 return 导致 002 被 001 覆盖
+                        }
+                        if ("该商品购物车达到上限".equals(cartVo.getUpdateMessage())) {
+                                // 限购 5 上限（原走异常→code=0，前端 case "003" 死分支，按钮禁用逻辑失效）
+                                resultMessage.success("003", cartVo.getUpdateMessage(), cartVo);
+                                return resultMessage;
                         }
                         resultMessage.success("001", "添加购物车成功", cartVo);
                 } else {

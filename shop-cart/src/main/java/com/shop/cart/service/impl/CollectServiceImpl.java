@@ -47,12 +47,9 @@ public class CollectServiceImpl {
         }
     }
 
+    /** 收藏列表（空集合正常返回——P8 同款修复：原抛 GET_COLLECT_NOT_FOUND 让前端/Agent 把"无收藏"当查询失败） */
     public List<Product> getCollect(String userId) {
-        List<Product> list = collectMapper.getCollect(userId);
-        if (list.isEmpty()) {
-            throw new XmException(ExceptionEnum.GET_COLLECT_NOT_FOUND);
-        }
-        return list;
+        return collectMapper.getCollect(userId);
     }
 
     public void deleteCollect(String userId, String productId) {

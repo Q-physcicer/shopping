@@ -38,10 +38,12 @@
           <div class="sorts">
             <span :class="{ on: sortKey === 'default' }" @click="setSort('default')">综合</span>
             <span :class="{ on: sortKey === 'sales' }" @click="setSort('sales')">
-              销量 <i :class="sortKey==='sales' ? 'el-icon-sort' : 'el-icon-bottom'"></i>
+              销量 <i :class="sortKey==='sales' ? 'el-icon-bottom' : 'el-icon-sort'"></i>
             </span>
             <span :class="{ on: sortKey === 'price' }" @click="setSort('price')">
-              价格 <i :class="sortKey==='price' ? 'el-icon-sort' : 'el-icon-bottom'"></i>
+              价格
+              <i v-if="sortKey==='price'" :class="sortAsc ? 'el-icon-top' : 'el-icon-bottom'"></i>
+              <i v-else class="el-icon-sort"></i>
             </span>
           </div>
           <div class="count" v-if="total">共 {{ total }} 件商品</div>
@@ -91,7 +93,8 @@ export default {
       if (this.sortKey === "sales") {
         list.sort((a, b) => (b.productSales || 0) - (a.productSales || 0));
       } else if (this.sortKey === "price") {
-        list.sort((a, b) => (a.productSellingPrice || 0) - (b.productSellingPrice || 0));
+        const dir = this.sortAsc ? 1 : -1;
+        list.sort((a, b) => dir * ((a.productSellingPrice || 0) - (b.productSellingPrice || 0)));
       }
       return list;
     }
@@ -127,7 +130,13 @@ export default {
       this.getData();
     },
     setSort(key) {
-      this.sortKey = key;
+      // P2：同 key 二次点击切换升降序（原 sortAsc 声明未用，图标暗示可切但永远只有单向）
+      if (this.sortKey === key) {
+        this.sortAsc = !this.sortAsc;
+      } else {
+        this.sortKey = key;
+        this.sortAsc = key === "price" ? true : false;   // 价格默认升序，销量默认降序
+      }
     },
     currentChange(page) {
       this.currentPage = page;

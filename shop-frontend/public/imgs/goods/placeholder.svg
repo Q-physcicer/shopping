@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <rect width="160" height="160" rx="12" fill="#f5f6fa"/>
+  <path d="M50 62h60l-6 46a6 6 0 0 1-6 5H62a6 6 0 0 1-6-5l-6-46z" fill="#dfe3f2"/>
+  <path d="M50 62l8-16h44l8 16" fill="#cdd4ec"/>
+  <circle cx="80" cy="86" r="12" fill="#b6c0e8"/>
+  <rect x="86" y="82" width="14" height="3" rx="1.5" fill="#f5f6fa"/>
+  <rect x="86" y="88" width="10" height="3" rx="1.5" fill="#f5f6fa"/>
+  <text x="80" y="132" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#9aa4c8">图片暂缺</text>
+</svg>

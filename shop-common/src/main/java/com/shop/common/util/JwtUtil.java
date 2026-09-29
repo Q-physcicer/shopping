@@ -33,8 +33,15 @@ public class JwtUtil {
 
     @PostConstruct
     public void init() {
+        // P2：默认 secret 是公开的仓库常量——未设 JWT_SECRET 等于任何人可伪造 ADMIN token
+        if (DEFAULT_SECRET.equals(secret)) {
+            org.slf4j.LoggerFactory.getLogger(JwtUtil.class)
+                    .error("[JwtUtil] 正在使用默认开发密钥！生产必须设置环境变量 JWT_SECRET，否则 token 可被伪造");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
+
+    private static final String DEFAULT_SECRET = "dev-only-secret-change-in-prod-0123456789abcdef";
 
     /** 签发 JWT；userId 过期时间 7 天（可配） */
     public String generate(Long userId, String username, String role) {

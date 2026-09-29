@@ -1,5 +1,6 @@
 #!/bin/bash
 # P2 超时取消链路验证（需要在 order 以 15s TTL 运行时执行）
+# 库名默认 shop；本地旧库需 DB_NAME=shopmanagement bash scripts/p2-timeout-verify.sh
 set -u
 OUT=/tmp/p2-timeout-result.txt
 : > $OUT
@@ -14,7 +15,7 @@ rm -f /tmp/bkt1.cookie
 curl -s -m 5 -X POST http://localhost:8080/user/login -H "Content-Type: application/json" \
   -d '{"username":"bkt1","password":"Test123456"}' -c /tmp/bkt1.cookie > /dev/null
 curl -s -m 8 -X POST -b /tmp/bkt1.cookie http://localhost:8080/cart/product/3 > /dev/null
-mysql -uroot -pshuozhi123456 shopmanagement -N -e "SELECT product_num FROM product WHERE product_id=3;" 2>/dev/null > /tmp/stock_before
+mysql -uroot -pshuozhi123456 ${DB_NAME:-shop} -N -e "SELECT product_num FROM product WHERE product_id=3;" 2>/dev/null > /tmp/stock_before
 log "下单前库存: $(cat /tmp/stock_before)"
 R=$(curl -s -m 8 -X POST -b /tmp/bkt1.cookie http://localhost:8080/order -H "Content-Type: application/json" -d '[{"productId":3,"num":1,"price":2599.0}]')
 log "下单响应: $R"
@@ -24,9 +25,9 @@ sleep 30
 
 # 4) 断言
 log "== 30s 后库存（期望回滚回下单前值）=="
-mysql -uroot -pshuozhi123456 shopmanagement -N -e "SELECT product_num FROM product WHERE product_id=3;" 2>/dev/null >> $OUT
+mysql -uroot -pshuozhi123456 ${DB_NAME:-shop} -N -e "SELECT product_num FROM product WHERE product_id=3;" 2>/dev/null >> $OUT
 log "== bkt1 最新普通订单状态（期望 2=已取消）=="
-mysql -uroot -pshuozhi123456 shopmanagement -e "SELECT order_id, status FROM \`order\` WHERE user_id=(SELECT user_id FROM user WHERE username='bkt1') AND seckill_id IS NULL ORDER BY id DESC LIMIT 1;" 2>/dev/null >> $OUT
+mysql -uroot -pshuozhi123456 ${DB_NAME:-shop} -e "SELECT order_id, status FROM \`order\` WHERE user_id=(SELECT user_id FROM user WHERE username='bkt1') AND seckill_id IS NULL ORDER BY id DESC LIMIT 1;" 2>/dev/null >> $OUT
 log "== 超时取消日志 =="
 grep "TimeoutCancel\|OrderTimeout" /tmp/shop-logs/order.log | tail -3 >> $OUT
 log "== P2 TIMEOUT VERIFY DONE =="

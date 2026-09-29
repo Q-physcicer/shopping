@@ -3,6 +3,7 @@ import { Card, Input, Button, message } from 'antd';
 import { SendOutlined, ClearOutlined, PauseOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import api from '../api';
 
 /**
  * 管理端 AI 运营助手（P5）：
@@ -70,15 +71,14 @@ export default function AgentChat() {
   };
 
   const reset = async () => {
+    // P1：改走 api 实例（原原生 fetch 不验状态码，cookie 失效时 reset 假成功——实际记忆没清）
     try {
-      await fetch(`/api/agent/admin/reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: cidRef.current })
-      });
+      await api.post('/agent/admin/reset', { conversationId: cidRef.current });
       setMsgs([]);
       message.success('会话已重置');
-    } catch { /* ignore */ }
+    } catch (e) {
+      message.error(e.message || '重置失败');
+    }
   };
 
   // 停止生成：close EventSource 后自行收尾（close 不触发 done/error）；保留已生成内容

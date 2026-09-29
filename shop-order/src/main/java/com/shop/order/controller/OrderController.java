@@ -4,8 +4,8 @@ import com.shop.common.context.UserContext;
 import com.shop.common.exception.ExceptionEnum;
 import com.shop.common.exception.XmException;
 import com.shop.common.util.Result;
+import com.shop.feign.OrderCreateRequest;
 import com.shop.order.service.impl.OrderServiceImpl;
-import com.shop.order.vo.CartVo;
 import com.shop.order.vo.OrderVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,10 +29,16 @@ public class OrderController {
     @Autowired
     private OrderServiceImpl osi;
 
-    /** 添加订单（购物车结算） */
+    /**
+     * 添加订单（购物车结算，P0-6 新契约）。
+     * body: {items:[{productId,num}], addressId}；价格由服务端回查商品表，客户端 price 一律忽略。
+     */
     @PostMapping("")
-    public Result addOrder(@RequestBody List<CartVo> cartVoList) {
-        String orderId = osi.addOrder(cartVoList, requireUserId());
+    public Result addOrder(@RequestBody OrderCreateRequest request) {
+        if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
+            return Result.fail("下单商品不能为空", null);
+        }
+        String orderId = osi.addOrderFromRequest(request, requireUserId());
         return Result.success("下单成功，30 分钟内未支付将自动取消", java.util.Map.of("orderId", orderId));
     }
 

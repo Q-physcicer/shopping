@@ -5,13 +5,9 @@ import com.shop.common.context.UserContext;
 import com.shop.common.exception.ExceptionEnum;
 import com.shop.common.exception.XmException;
 import com.shop.common.util.Result;
-import com.shop.common.util.IdWorker;
 import com.shop.order.mapper.OrderMapper;
-import com.shop.order.mapper.PaymentRecordMapper;
 import com.shop.order.pojo.Order;
-import com.shop.order.pojo.PaymentRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.shop.order.service.impl.OrderServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,29 +15,24 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 模拟收银台（P6）：
- * GET  /pay/mock/{orderId} —— 拉起收银台信息（金额/状态）
- * POST /pay/mock/{orderId} —— 模拟支付成功：CAS(待支付→已支付) 与超时取消互斥，只赢一个；
- *                              落 payment_record 流水；订单号雪花生成支付单号。
+ * 模拟收银台（P6，P0 事务化重构）：
+ * GET  /pay/mock/{orderId} —— 拉起收银台信息（金额/状态/收件信息快照）
+ * POST /pay/mock/{orderId} —— 模拟支付成功：核心三连写收敛到 OrderServiceImpl.payMock（@Transactional），
+ *                              CAS(待支付→已支付) 与超时取消互斥只赢一个，流水/消息同事务落库。
  */
 @RestController
 @RequestMapping("/pay")
 public class PayController {
 
-    private static final Logger log = LoggerFactory.getLogger(PayController.class);
-
     @Autowired
     private OrderMapper orderMapper;
     @Autowired
-    private PaymentRecordMapper paymentMapper;
-
-    private final IdWorker idWorker = new IdWorker(2, 2);
+    private OrderServiceImpl osi;
 
     /** 收银台信息 */
     @GetMapping("/mock/{orderId}")
@@ -53,45 +44,26 @@ public class PayController {
             throw new XmException(ExceptionEnum.GET_ORDER_NOT_FOUND);
         }
         double amount = rows.stream().mapToDouble(o -> o.getProductPrice() * o.getProductNum()).sum();
-        Integer status = rows.get(0).getStatus();
+        Order first = rows.get(0);
+        Integer status = first.getStatus();
         Map<String, Object> data = new HashMap<>();
         data.put("orderId", orderId);
         data.put("amount", amount);
         data.put("status", status);   // 0=可支付，1=已支付（收银台展示已支付态）
         data.put("items", rows.size());
+        // P0-6：收件信息快照（随单落库后展示；存量老单无快照为 null，前端不渲染该区）
+        data.put("receiverName", first.getReceiverName());
+        data.put("receiverPhone", first.getReceiverPhone());
+        data.put("receiverAddress", first.getReceiverAddress());
         return Result.success("success", data);
     }
 
-    /** 模拟支付成功回调 */
+    /** 模拟支付成功回调（核心逻辑在 OrderServiceImpl.payMock，@Transactional 包裹三连写） */
     @PostMapping("/mock/{orderId}")
     public Result pay(@PathVariable String orderId) {
         Integer uid = requireUserId();
-        List<Order> rows = orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getOrderId, orderId).eq(Order::getUserId, uid));
-        if (rows.isEmpty()) {
-            throw new XmException(ExceptionEnum.GET_ORDER_NOT_FOUND);
-        }
-        double amount = rows.stream().mapToDouble(o -> o.getProductPrice() * o.getProductNum()).sum();
-
-        // CAS：与 OrderTimeoutListener 的 cancelIfPending 互斥
-        int updated = orderMapper.payIfPending(orderId, System.currentTimeMillis());
-        if (updated == 0) {
-            return Result.fail("订单不可支付（可能已支付/已取消）", null);
-        }
-
-        // 流水
-        PaymentRecord record = new PaymentRecord();
-        record.setPayNo("MOCK" + idWorker.nextId());
-        record.setOrderId(orderId);
-        record.setUserId(uid);
-        record.setAmount(amount);
-        record.setPayChannel("MOCK");
-        record.setStatus(1);
-        record.setCreatedAt(new Date());
-        paymentMapper.insert(record);
-
-        log.info("[Pay] 模拟支付成功 orderId={} userId={} amount={}", orderId, uid, amount);
-        return Result.success("支付成功", Map.of("payNo", record.getPayNo(), "amount", amount));
+        Map<String, Object> data = osi.payMock(uid, orderId);
+        return Result.success("支付成功", data);
     }
 
     private Integer requireUserId() {

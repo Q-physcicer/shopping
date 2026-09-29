@@ -11,6 +11,11 @@ export default defineConfig({
         target: 'http://localhost:8080/',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      // P2：dev 期共享购物端的静态图片（管理端无 public/imgs，缩略图/轮播预览原本全裂）
+      '/imgs': {
+        target: 'http://localhost:7080/',
+        changeOrigin: true
       }
     }
   }

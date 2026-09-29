@@ -11,15 +11,24 @@
               <el-button type="text" @click="register = true">注册</el-button>
             </li>
             <li v-else>
-              欢迎
-              <el-popover placement="top" width="180" v-model="visible">
-                <p>确定退出登录吗？</p>
-                <div style="text-align: right; margin: 10px 0 0">
-                  <el-button size="mini" type="text" @click="visible = false">取消</el-button>
-                  <el-button type="primary" size="mini" @click="logout">确定</el-button>
-                </div>
-                <el-button type="text" slot="reference">{{this.$store.getters.getUser.username}}</el-button>
-              </el-popover>
+              <el-dropdown @command="handleUserCommand">
+                <span class="user-menu-trigger">
+                  欢迎，{{this.$store.getters.getUser.username}}
+                  <i class="el-icon-arrow-down el-icon--right"></i>
+                </span>
+                <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-item command="/member/profile">个人中心</el-dropdown-item>
+                  <el-dropdown-item command="/order">我的订单</el-dropdown-item>
+                  <el-dropdown-item command="/collect">我的收藏</el-dropdown-item>
+                  <el-dropdown-item command="/member/aftersale">售后服务</el-dropdown-item>
+                  <el-dropdown-item command="/member/address">收货地址</el-dropdown-item>
+                  <el-dropdown-item command="/member/message">
+                    消息中心
+                    <span v-if="getUnreadMessage > 0" class="msg-badge">{{getUnreadMessage}}</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </el-dropdown>
             </li>
             <li>
               <router-link to="/order">我的订单</router-link>
@@ -135,25 +144,25 @@ export default {
       activeIndex: "", // 头部导航栏选中的标签
       search: "", // 搜索条件
       register: false, // 是否显示注册组件
-      visible: false // 是否退出登录
+      unreadTimer: null // 未读数轮询定时器
     };
   },
   created() {
-    // 对用户信息进行校验，并刷新cookie
+    // 支付成功/消息产生时全局即时刷新（PayView 等子组件触发）
+    this.$root.$on("refresh-unread", this.refreshUnread);
+
+    // 对用户信息进行校验：有 XM_TOKEN 则调后端 /user/token 刷新（JWT 无 "|"，禁止前端 split 解析）
     if (this.getCookie('XM_TOKEN') != null) {
       this.$axios
         .get("/api/user/token")
         .then(res => {
-          if (res.data.code === "001") {
-            // 001 为成功
+          if (res.data.code) {
             this.setUser(res.data.data);
           }
+        })
+        .catch(() => {
+          // 校验失败不写入垃圾 user，交由响应拦截器统一弹登录框
         });
-      let cookie = this.getCookie('XM_TOKEN');
-      let user = {};
-      user.userId = cookie.split("|")[1];
-      user.username = cookie.split("|")[2];
-      this.setUser(user);
     }
 
     // window.setTimeout(() => {
@@ -170,21 +179,23 @@ export default {
     // }, 1000 * 60);
   },
   computed: {
-    ...mapGetters(["getUser", "getNum"])
+    ...mapGetters(["getUser", "getNum", "getUnreadMessage"])
   },
   watch: {
     // 获取vuex的登录状态
     getUser: function(val) {
       if (val === "") {
-        // 用户没有登录
+        // 用户没有登录：清空并停止未读轮询
         this.setShoppingCart([]);
+        this.setUnreadMessage(0);
+        this.stopUnreadPolling();
       } else {
         // 用户已经登录,获取该用户的购物车信息
         this.$axios
           .get("/api/cart/user")
           .then(res => {
-            if (res.data.code === "001") {
-              // 001 为成功, 更新vuex购物车状态
+            if (res.data.code) {
+              // 更新vuex购物车状态
               this.setShoppingCart(res.data.data);
             } else {
               // 提示失败信息
@@ -194,23 +205,69 @@ export default {
           .catch(err => {
             return Promise.reject(err);
           });
+        // 拉取消息中心未读数并启动轮询（P1：支付/审批后徽标不再需要刷新页面）
+        this.refreshUnread();
+        this.startUnreadPolling();
       }
     }
   },
+  beforeDestroy() {
+    this.stopUnreadPolling();
+    this.$root.$off("refresh-unread", this.refreshUnread);
+  },
   methods: {
-    ...mapActions(["setUser", "setShowLogin", "setShoppingCart"]),
+    ...mapActions(["setUser", "setShowLogin", "setShoppingCart", "setUnreadMessage"]),
+    // 未读数 30s 轮询（修复：原只登录时拉一次，支付/审批产生的新消息徽标永不更新）
+    startUnreadPolling() {
+      this.stopUnreadPolling();
+      this.unreadTimer = setInterval(this.refreshUnread, 30000);
+    },
+    stopUnreadPolling() {
+      if (this.unreadTimer) {
+        clearInterval(this.unreadTimer);
+        this.unreadTimer = null;
+      }
+    },
     login() {
       // 点击登录按钮, 通过更改vuex的showLogin值显示登录组件
       this.setShowLogin(true);
     },
+    // 顶栏用户下拉命令
+    handleUserCommand(command) {
+      if (command === "logout") {
+        this.logout();
+      } else {
+        this.$router.push(command);
+      }
+    },
+    // 刷新消息未读数
+    refreshUnread() {
+      // 匿名/未登录不发请求
+      if (!this.getUser) return;
+      this.$axios
+        .get("/api/order/message/unread")
+        .then(res => {
+          if (res.data.code) {
+            this.setUnreadMessage(res.data.data && res.data.data.count || 0);
+          }
+        })
+        .catch(() => {});
+    },
     // 退出登录
     logout() {
-      this.visible = false;
+      // 先通知后端把 JWT 的 jti 加入黑名单，再清前端登录态
+      // token 已过期时该接口 401，catch 静默——用户点退出却收到"请先登录"语义打架
+      this.$axios.post("/api/user/logout").catch(() => {});
       // 清空cookie中的token
       this.delCookie("XM_TOKEN");
       // 清空vuex登录信息
       this.setUser("");
+      this.setUnreadMessage(0);
       this.notifySucceed("成功退出登录");
+      // P1：登出后离开受限页面（原停 /member/* 会残留旧用户数据）
+      if (this.$route.path !== "/" && this.$route.matched.some(r => r.meta && r.meta.requireAuth)) {
+        this.$router.push("/");
+      }
     },
     // 接收注册子组件传过来的数据
     isRegister(val) {
@@ -322,6 +379,27 @@ a:hover {
 }
 .topbar .nav .shopCart-full a {
   color: white;
+}
+.topbar .nav .user-menu-trigger {
+  color: #b0b0b0;
+  cursor: pointer;
+  outline: none;
+}
+.topbar .nav .user-menu-trigger:hover {
+  color: #fff;
+}
+.topbar .nav .msg-badge {
+  display: inline-block;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 8px;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
 }
 /* 顶部导航栏CSS END */
 

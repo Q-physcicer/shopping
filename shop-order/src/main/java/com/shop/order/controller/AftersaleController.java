@@ -32,9 +32,17 @@ public class AftersaleController {
     public Result apply(@RequestBody Map<String, Object> body) {
         Integer userId = requireUserId();
         String orderId = body.get("orderId") == null ? null : String.valueOf(body.get("orderId")).trim();
-        Integer productId = body.get("productId") == null ? null
-                : Integer.valueOf(String.valueOf(body.get("productId")));
+        Integer productId;
+        try {
+            productId = body.get("productId") == null ? null
+                    : Integer.valueOf(String.valueOf(body.get("productId")));
+        } catch (NumberFormatException e) {
+            return Result.fail("商品 ID 格式错误", null);
+        }
         String reason = body.get("reason") == null ? null : String.valueOf(body.get("reason")).trim();
+        if (reason != null && reason.length() > 200) {
+            return Result.fail("申请理由过长（≤200 字）", null);
+        }
         return aftersaleService.apply(userId, orderId, productId, reason);
     }
 

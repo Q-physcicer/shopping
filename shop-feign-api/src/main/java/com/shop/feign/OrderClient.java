@@ -25,11 +25,16 @@ public interface OrderClient {
     @GetMapping("/order/internal/stats/gmv")
     Result gmv(@RequestParam(value = "days", defaultValue = "7") int days);
 
-    /** 订单分页（admin） */
+    /** 订单分页（admin；返回 {list,total}） */
     @GetMapping("/order/internal/page")
     Result pageOrders(@RequestParam(value = "page", defaultValue = "1") int page,
                       @RequestParam(value = "size", defaultValue = "20") int size,
-                      @RequestParam(value = "status", required = false) Integer status);
+                      @RequestParam(value = "status", required = false) Integer status,
+                      @RequestParam(value = "orderId", required = false) String orderId);
+
+    /** 管理端标记订单完成（CAS 1→3） */
+    @PostMapping("/order/internal/done")
+    Result markOrderDone(@RequestBody java.util.Map<String, Object> body);
 
     // ---------------- 售后（P8 仅退款闭环） ----------------
 

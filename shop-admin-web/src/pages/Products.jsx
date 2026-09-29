@@ -8,43 +8,56 @@ export default function Products() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('');   // 提交搜索的词（Enter 才生效）
+  const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [categoryId, setCategoryId] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState(null);   // null=新增, 对象=编辑
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
-  const load = () => {
-    api.get('/admin/product/page', { params: { page, size: 10, keyword: keyword || undefined, categoryId: categoryId || undefined } })
+  // P1 修复：全部过滤条件都进依赖（原 setTimeout(load) 闭包读取旧 categoryId，筛选永远慢一拍）
+  useEffect(() => {
+    setLoading(true);
+    api.get('/admin/product/page', {
+      params: { page, size: 10, keyword: searchKeyword || undefined, categoryId: categoryId || undefined }
+    })
       .then((d) => { setRows(d.list || []); setTotal(d.total || 0); })
-      .catch((e) => message.error(e.message));
-  };
+      .catch((e) => message.error(e.message))
+      .finally(() => setLoading(false));
+  }, [page, searchKeyword, categoryId]);
 
-  useEffect(() => { load(); }, [page]);
   useEffect(() => {
     api.get('/admin/category/list').then(setCategories).catch(() => {});
   }, []);
 
   const openEdit = (record) => {
-    setEditing(record || {});
+    setEditing(record || null);
+    // P1 修复：先重置再填充（原 setFieldsValue 不清未提供字段，新增会继承上一次编辑的名称/简介）
+    form.resetFields();
     form.setFieldsValue(record || { productNum: 100, productPrice: 100, productSellingPrice: 100 });
     setEditOpen(true);
   };
 
   const submit = async () => {
     const values = await form.validateFields();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       if (editing?.productId) {
-        await api.post(`/admin/product/${editing.productId}/update`, values);
-        message.success('商品已更新（ES 同步已触发）');
+        const res = await api.post(`/admin/product/${editing.productId}/update`, values);
+        message.success((res && res.__msg) || '商品已更新（ES 同步已触发）');
       } else {
-        await api.post('/admin/product', values);
-        message.success('商品上架成功');
+        const res = await api.post('/admin/product', values);
+        message.success((res && res.__msg) || '商品上架成功');
       }
       setEditOpen(false);
-      load();
+      setPage(1);
     } catch (e) {
       message.error(e.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -54,9 +67,9 @@ export default function Products() {
       content: '库存将置 0，并自动移出搜索索引',
       onOk: async () => {
         try {
-          await api.delete(`/admin/product/${record.productId}`);
-          message.success('已下架');
-          load();
+          const res = await api.delete(`/admin/product/${record.productId}`);
+          message.success((res && res.__msg) || '已下架');
+          setPage(1);
         } catch (e) { message.error(e.message); }
       }
     });
@@ -68,11 +81,11 @@ export default function Products() {
         title="商品管理"
         extra={
           <Space>
-            <Input allowClear prefix={<SearchOutlined />} placeholder="商品名搜索"
+            <Input allowClear prefix={<SearchOutlined />} placeholder="商品名搜索（回车）"
               value={keyword} onChange={(e) => setKeyword(e.target.value)}
-              onPressEnter={() => { setPage(1); load(); }} style={{ width: 200 }} />
+              onPressEnter={() => { setPage(1); setSearchKeyword(keyword.trim()); }} style={{ width: 200 }} />
             <Select allowClear placeholder="分类" style={{ width: 130 }} value={categoryId}
-              onChange={(v) => { setCategoryId(v); setPage(1); setTimeout(load); }}
+              onChange={(v) => { setPage(1); setCategoryId(v); }}
               options={categories.map((c) => ({ value: c.categoryId, label: c.categoryName }))} />
             <Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit(null)}>上架商品</Button>
           </Space>
@@ -80,8 +93,9 @@ export default function Products() {
       >
         <Table
           rowKey="productId"
+          loading={loading}
           dataSource={rows}
-          pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
+          pagination={{ current: page, total, pageSize: 10, onChange: setPage, showTotal: (t) => `共 ${t} 件商品` }}
           columns={[
             { title: 'ID', dataIndex: 'productId', width: 60 },
             {
@@ -111,30 +125,34 @@ export default function Products() {
       </Card>
 
       <Modal title={editing?.productId ? `编辑商品 #${editing.productId}` : '上架新商品'}
-        open={editOpen} onCancel={() => setEditOpen(false)} onOk={submit} okText="保存" cancelText="取消" width={560}>
+        open={editOpen} onCancel={() => setEditOpen(false)} onOk={submit}
+        okText="保存" cancelText="取消" width={560} confirmLoading={submitting}>
         <Form form={form} labelCol={{ span: 6 }}>
-          <Form.Item name="productName" label="商品名称" rules={[{ required: true }]}>
-            <Input placeholder="如：星选手机 X10" />
+          <Form.Item name="productName" label="商品名称"
+            rules={[{ required: true, message: '请输入商品名称' }, { max: 100, message: '不超过 100 字' }]}>
+            <Input placeholder="如：星选手机 X10" maxLength={100} />
           </Form.Item>
-          <Form.Item name="categoryId" label="分类" rules={[{ required: true }]}>
+          <Form.Item name="categoryId" label="分类" rules={[{ required: true, message: '请选择分类' }]}>
             <Select options={categories.map((c) => ({ value: c.categoryId, label: c.categoryName }))} />
           </Form.Item>
-          <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Form.Item name="productPrice" label="原价" rules={[{ required: true }]}>
-              <InputNumber min={0} precision={2} style={{ width: 130 }} />
-            </Form.Item>
-            <Form.Item name="productSellingPrice" label="售价" rules={[{ required: true }]}>
-              <InputNumber min={0} precision={2} style={{ width: 130 }} />
-            </Form.Item>
-            <Form.Item name="productNum" label="库存" rules={[{ required: true }]}>
-              <InputNumber min={0} precision={0} style={{ width: 130 }} />
-            </Form.Item>
-          </Space>
+          {/* P1 修复：移除外层 Space + labelCol 组合导致的错位挤压，改纵向排列 */}
+          <Form.Item name="productPrice" label="原价"
+            rules={[{ required: true, message: '请输入原价' }]}>
+            <InputNumber min={0.01} precision={2} style={{ width: 160 }} placeholder="大于 0" />
+          </Form.Item>
+          <Form.Item name="productSellingPrice" label="售价"
+            rules={[{ required: true, message: '请输入售价' }]}>
+            <InputNumber min={0.01} precision={2} style={{ width: 160 }} placeholder="大于 0" />
+          </Form.Item>
+          <Form.Item name="productNum" label="库存"
+            rules={[{ required: true, message: '请输入库存' }]}>
+            <InputNumber min={0} precision={0} style={{ width: 160 }} />
+          </Form.Item>
           <Form.Item name="productPicture" label="图片路径">
             <Input placeholder="imgs/goods/xxx.svg" />
           </Form.Item>
           <Form.Item name="productIntro" label="卖点简介">
-            <Input.TextArea rows={3} placeholder="分卖点 / 分关键词 / 分隔" />
+            <Input.TextArea rows={3} maxLength={500} placeholder="分卖点 / 分关键词 / 分隔" />
           </Form.Item>
         </Form>
       </Modal>

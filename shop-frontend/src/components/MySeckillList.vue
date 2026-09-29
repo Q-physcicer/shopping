@@ -11,13 +11,13 @@
           <i class="el-icon-close delete" slot="reference" v-show="isDelete"></i>
         </el-popover>
         <router-link :to="{ path: '/goods/seckillDetails', query: {seckillID:item.seckillId,productID:item.productId} }">
-          <img :src="$target +item.productPicture" alt />
+          <img v-imgerror :src="$target +item.productPicture" alt />
           <h2>{{item.productName}}</h2>
           <h3>{{item.productTitle}}</h3>
           <p>
             <span>{{item.seckillPrice}}元</span>
             <span
-              v-show="item.productPrice != item.productSellingPrice"
+              v-show="item.productPrice != item.seckillPrice"
               class="del"
             >{{item.productPrice}}元</span>
           </p>
@@ -47,7 +47,8 @@ export default {
       let categoryID = [];
       if (this.list != "") {
         for (let i = 0; i < this.list.length; i++) {
-          const id = this.list[i].category_id;
+          // P1 修复：VO 字段是 categoryId（snake_case 是 P8 同款 bug 的漏网副本）
+          const id = this.list[i].categoryId;
           if (!categoryID.includes(id)) {
             categoryID.push(id);
           }
@@ -62,23 +63,16 @@ export default {
         .delete("/api/collect/user/" + product_id)
         .then(res => {
           if(res.data.code){
-              // 删除成功
-              // 删除删除列表中的该商品信息
-              for (let i = 0; i < this.list.length; i++) {
-                const temp = this.list[i];
-                if (temp.productId == product_id) {
-                  //this.list.splice(i, 1);
-                }
-              }
-              // 提示删除成功信息
+              // 删除成功：通知父组件移除该行（vue 单向数据流，子组件不直接改 props）
+              this.$emit("item-deleted", product_id);
               this.notifySucceed(res.data.msg);
           }else{
             // 提示删除失败信息
               this.notifyError(res.data.msg);
           }
         })
-        .catch(err => {
-          return Promise.reject(err);
+        .catch(() => {
+          this.notifyError("网络异常，删除失败请重试");
         });
     }
   }

@@ -37,4 +37,8 @@ public interface ProductClient {
     /** ES 全量重建（admin 系统设置） */
     @PostMapping("/product/internal/es/rebuild")
     Result rebuildEs();
+
+    /** 新增秒杀商品（P1 正轨化：product 端写库+清缓存+校验） */
+    @PostMapping("/seckill/admin/add")
+    Result addSeckill(@org.springframework.web.bind.annotation.RequestBody java.util.Map<String, Object> body);
 }

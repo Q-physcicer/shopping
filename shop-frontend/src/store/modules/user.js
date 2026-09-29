@@ -2,7 +2,8 @@
 export default {
   state: {
     user: "", // 登录的用户
-    showLogin: false // 用于控制是否显示登录组件
+    showLogin: false, // 用于控制是否显示登录组件
+    unreadMessage: 0 // 消息中心未读数
   },
   getters: {
     getUser (state) {
@@ -10,6 +11,9 @@ export default {
     },
     getShowLogin (state) {
       return state.showLogin
+    },
+    getUnreadMessage (state) {
+      return state.unreadMessage
     }
   },
   mutations: {
@@ -18,6 +22,9 @@ export default {
     },
     setShowLogin (state, data) {
       state.showLogin = data;
+    },
+    setUnreadMessage (state, data) {
+      state.unreadMessage = data;
     }
   },
   actions: {
@@ -26,6 +33,9 @@ export default {
     },
     setShowLogin ({ commit }, data) {
       commit('setShowLogin', data);
+    },
+    setUnreadMessage ({ commit }, data) {
+      commit('setUnreadMessage', data);
     }
   }
 }

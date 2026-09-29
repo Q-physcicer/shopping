@@ -6,6 +6,7 @@ import com.shop.common.util.Result;
 import com.shop.order.mapper.AftersaleMapper;
 import com.shop.order.pojo.AftersaleRecord;
 import com.shop.order.pojo.Order;
+import com.shop.order.pojo.UserMessage;
 import com.shop.order.vo.AftersaleVo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,8 @@ public class AftersaleServiceImpl {
 
     @Autowired
     private AftersaleMapper aftersaleMapper;
+    @Autowired
+    private com.shop.order.service.impl.UserMessageServiceImpl messageService;
 
     /**
      * 提交售后申请（仅退款）。政策违规返回 code=0 的语义化提示（Agent 可直接转述）。
@@ -104,10 +107,18 @@ public class AftersaleServiceImpl {
         if (aftersaleId == null || aftersaleId.isBlank()) {
             return Result.fail("缺少售后单号", null);
         }
+        AftersaleRecord record = aftersaleMapper.selectOne(
+                new LambdaQueryWrapper<AftersaleRecord>().eq(AftersaleRecord::getAftersaleId, aftersaleId));
         if (approve) {
             int updated = aftersaleMapper.approveIfPending(aftersaleId, System.currentTimeMillis(), handlerId);
             if (updated == 0) {
                 return Result.fail("该售后单不存在或已被处理", null);
+            }
+            // 消息中心：退款已同意
+            if (record != null) {
+                messageService.push(record.getUserId(), UserMessage.TYPE_AFTERSALE, "售后已同意",
+                        "售后单 " + aftersaleId + "（订单 " + record.getOrderId() + "）已同意退款 ￥"
+                                + record.getRefundAmount() + "。");
             }
             log.info("[AfterSale] 售后已同意退款 aftersaleId={} handler={}", aftersaleId, handlerId);
             return Result.success("已同意退款（模拟退款完成）", null);
@@ -115,13 +126,18 @@ public class AftersaleServiceImpl {
         if (rejectReason == null || rejectReason.isBlank()) {
             return Result.fail("拒绝售后必须填写理由", null);
         }
-        int updated = aftersaleMapper.rejectIfPending(aftersaleId,
-                rejectReason.length() > 200 ? rejectReason.substring(0, 200) : rejectReason,
+        String reason = rejectReason.length() > 200 ? rejectReason.substring(0, 200) : rejectReason;
+        int updated = aftersaleMapper.rejectIfPending(aftersaleId, reason,
                 System.currentTimeMillis(), handlerId);
         if (updated == 0) {
             return Result.fail("该售后单不存在或已被处理", null);
         }
-        log.info("[AfterSale] 售后已拒绝 aftersaleId={} handler={} reason={}", aftersaleId, handlerId, rejectReason);
+        // 消息中心：售后已拒绝
+        if (record != null) {
+            messageService.push(record.getUserId(), UserMessage.TYPE_AFTERSALE, "售后已拒绝",
+                    "售后单 " + aftersaleId + "（订单 " + record.getOrderId() + "）已被拒绝，理由：" + reason);
+        }
+        log.info("[AfterSale] 售后已拒绝 aftersaleId={} handler={} reason={}", aftersaleId, handlerId, reason);
         return Result.success("已拒绝该售后申请", null);
     }
 

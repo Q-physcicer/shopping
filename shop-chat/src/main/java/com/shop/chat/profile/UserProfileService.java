@@ -125,7 +125,14 @@ public class UserProfileService {
 
     private void putIfPresent(Long uid, String field, String value) {
         if (value != null && !value.isBlank()) {
-            redis.opsForHash().put(key(uid), field, value);
+            // P2：截 200 字入库（这些文本最终拼进 system prompt；不设限会被恶意对话注入超长内容）
+            String trimmed = value.trim();
+            if (trimmed.length() > 200) {
+                trimmed = trimmed.substring(0, 200);
+            }
+            redis.opsForHash().put(key(uid), field, trimmed);
+            // 每次写入续期，防画像提前过期
+            redis.expire(key(uid), java.time.Duration.ofDays(30));
         }
     }
 

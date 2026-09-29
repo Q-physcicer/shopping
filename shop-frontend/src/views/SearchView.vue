@@ -24,6 +24,12 @@
         <i class="el-icon-loading"></i> 正在搜索…
       </div>
 
+      <!-- P2：空关键词不再沉默（原静默 return，页面只有孤零零的搜索头） -->
+      <div v-else-if="!keyword" class="empty">
+        <p>输入关键词开始搜索</p>
+        <p class="tip">例如「坚果」「防晒」「咖啡」「帐篷」</p>
+      </div>
+
       <div v-else-if="total === 0" class="empty">
         <p>没有找到相关商品</p>
         <p class="tip">换个关键词试试，例如「Redmi」「骁龙」「空调」</p>

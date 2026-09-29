@@ -20,7 +20,8 @@ export default function Users() {
   const toggleRole = async (u) => {
     try {
       const res = await api.post(`/admin/user/${u.userId}/role`);
-      message.success(res || '已切换');
+      // 后端带具体方向文案（"角色已切换为 ADMIN"），原 res===null 丢失
+      message.success((res && res.__msg) || '已切换');
       load();
     } catch (e) { message.error(e.message); }
   };

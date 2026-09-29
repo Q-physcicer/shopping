@@ -29,4 +29,8 @@ public interface OrderMapper extends BaseMapper<Order> {
     /** 模拟支付成功 CAS：待支付 → 已支付，落支付时间 */
     @Update("UPDATE `order` SET `status` = 1, `pay_time` = #{payTime} WHERE `order_id` = #{orderId} AND `status` = 0")
     int payIfPending(@Param("orderId") String orderId, @Param("payTime") Long payTime);
+
+    /** 管理端标记完成 CAS：仅已支付订单可置【已完成】（状态 3 原为永不可达） */
+    @Update("UPDATE `order` SET `status` = 3 WHERE `order_id` = #{orderId} AND `status` = 1")
+    int markDoneIfPaid(@Param("orderId") String orderId);
 }

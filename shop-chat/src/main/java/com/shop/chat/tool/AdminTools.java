@@ -151,8 +151,16 @@ public class AdminTools {
         if (uid == null || "anonymous".equals(String.valueOf(uid))) {
             return fn.get();
         }
-        UserContext.set(new UserContext.Principal(Long.valueOf(String.valueOf(uid)),
-                String.valueOf(username), String.valueOf(role)));
+        // P2：畸形 uid 防御（对齐 ShopTools.extractUid：工具线程上 Long.valueOf 抛 NFE 会污染整轮对话）
+        Long uidVal;
+        try {
+            uidVal = Long.valueOf(String.valueOf(uid));
+        } catch (NumberFormatException e) {
+            return fn.get();   // 无法解析时按匿名降级（下游 ADMIN 校验会拒）
+        }
+        UserContext.set(new UserContext.Principal(uidVal,
+                username == null ? null : String.valueOf(username),
+                role == null ? "USER" : String.valueOf(role)));
         try {
             return fn.get();
         } finally {

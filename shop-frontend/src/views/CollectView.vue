@@ -16,13 +16,14 @@
     </div>
     <div class="content">
       <div class="goods-list" v-if="collectList.length>0">
-        <MyList :list="collectList" :isDelete="true"></MyList>
+        <MyList :list="collectList" :isDelete="true" @item-deleted="removeItem"></MyList>
       </div>
       <!-- 收藏列表为空的时候显示的内容 -->
       <div v-else class="collect-empty">
         <div class="empty">
           <h2>您的收藏还是空的！</h2>
           <p>快去购物吧！</p>
+          <el-button type="primary" round class="empty-cta" @click="$router.push('/goods')">去逛逛</el-button>
         </div>
       </div>
       <!--  收藏列表为空的时候显示的内容END -->
@@ -37,7 +38,7 @@ export default {
     };
   },
   activated() {
-    // 获取收藏数据
+    // 获取收藏数据（activated 每次进入页面刷新，keep-alive 下的正确姿势）
     this.$axios
       .get("/api/collect/user")
       .then(res => {
@@ -45,9 +46,18 @@ export default {
           this.collectList = res.data.data;
         }
       })
-      .catch(err => {
-        return Promise.reject(err);
+      .catch(() => {
+        this.notifyError("网络异常，收藏加载失败");
       });
+  },
+  methods: {
+    // 子组件删除成功后同步移除列表行（修复历史 bug：删除后商品残留页面）
+    removeItem(productId) {
+      const idx = this.collectList.findIndex(t => t.productId == productId);
+      if (idx > -1) {
+        this.collectList.splice(idx, 1);
+      }
+    }
   }
 };
 </script>
@@ -96,6 +106,10 @@ export default {
 .collect .collect-empty .empty p {
   margin: 0 0 20px;
   font-size: 20px;
+}
+.collect .collect-empty .empty .empty-cta {
+  background: #5b6ef5;
+  border-color: #5b6ef5;
 }
 /* 收藏列表为空的时候显示的内容CSS END */
 </style>

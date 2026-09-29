@@ -10,6 +10,11 @@
           <p>订单号：{{ orderId }}</p>
           <p>共 {{ items }} 件商品</p>
         </div>
+        <!-- P0-6：收件信息快照（老单无快照时不渲染） -->
+        <div class="receiver" v-if="receiverName">
+          <p class="receiver-line"><i class="el-icon-location-outline"></i> {{ receiverName }} {{ receiverPhone }}</p>
+          <p class="receiver-line addr">{{ receiverAddress }}</p>
+        </div>
 
         <!-- 支付中：二维码样式占位 + 轮询提示 -->
         <div class="qr" v-if="paying">
@@ -57,14 +62,32 @@ export default {
       status: null,
       payedNo: "",
       paying: false,
-      loaded: false
+      loaded: false,
+      receiverName: "",
+      receiverPhone: "",
+      receiverAddress: "",
+      pollTimer: null,
+      pollTimeout: null
     };
   },
   created() {
     this.orderId = this.$route.params.orderId;
     this.load();
   },
+  // P2：keep-alive 下离开页面必须停轮询（原缺陷：后台空转，回页状态不同步）
+  deactivated() {
+    this.stopPolling();
+  },
+  beforeDestroy() {
+    this.stopPolling();
+  },
   methods: {
+    stopPolling() {
+      if (this.pollTimer) clearInterval(this.pollTimer);
+      if (this.pollTimeout) clearTimeout(this.pollTimeout);
+      this.pollTimer = null;
+      this.pollTimeout = null;
+    },
     load() {
       this.$axios
         .get(`/api/pay/mock/${this.orderId}`)
@@ -73,10 +96,17 @@ export default {
             this.amount = res.data.data.amount;
             this.items = res.data.data.items;
             this.status = res.data.data.status;
+            // P0-6：收件信息快照（老单可能为 null）
+            this.receiverName = res.data.data.receiverName || "";
+            this.receiverPhone = res.data.data.receiverPhone || "";
+            this.receiverAddress = res.data.data.receiverAddress || "";
           } else {
             this.$message.error(res.data.msg || "订单不存在");
             this.$router.push("/order");
           }
+        })
+        .catch(() => {
+          this.$message.error("网络异常，请稍后重试");
         })
         .finally(() => (this.loaded = true));
     },
@@ -101,21 +131,24 @@ export default {
     },
     // 轮询订单状态（模拟回调确认）
     pollStatus() {
-      const timer = setInterval(() => {
+      this.stopPolling();
+      this.pollTimer = setInterval(() => {
         this.$axios.get(`/api/pay/mock/${this.orderId}`).then(res => {
           if (res.data.code === 1 && res.data.data.status !== 0) {
-            clearInterval(timer);
+            this.stopPolling();
             this.status = res.data.data.status;
             this.paying = false;
             if (this.status === 1) {
               this.$notify.success({ title: "支付成功", message: "订单已支付，感谢您的购买～" });
+              // 支付产生站内信：立即触发一次未读徽标刷新
+              this.$root.$emit("refresh-unread");
             }
           }
         });
       }, 1000);
       // 最多轮询 10 秒兜底退出
-      setTimeout(() => {
-        clearInterval(timer);
+      this.pollTimeout = setTimeout(() => {
+        this.stopPolling();
         this.paying = false;
         if (this.status === 0) this.load();
       }, 10000);
@@ -132,7 +165,11 @@ export default {
 .brand { font-size: 15px; color: #5b6ef5; font-weight: 600; margin-bottom: 22px; }
 .amount-title { color: #8c8ca6; font-size: 13px; }
 .amount { font-size: 44px; font-weight: 700; color: #2b2b38; margin: 6px 0 4px; }
-.meta { color: #b6b6c8; font-size: 12px; line-height: 1.9; margin-bottom: 26px; }
+.meta { color: #b6b6c8; font-size: 12px; line-height: 1.9; margin-bottom: 14px; }
+.receiver { border-top: 1px dashed #ececf3; margin: 0 auto 22px; padding-top: 10px; max-width: 320px; }
+.receiver-line { color: #8c8ca6; font-size: 12px; line-height: 1.8; margin: 0; }
+.receiver-line i { color: #5b6ef5; margin-right: 4px; }
+.receiver-line.addr { color: #b6b6c8; }
 .actions { display: flex; flex-direction: column; gap: 12px; }
 .btn-pay { width: 100%; font-size: 16px; height: 44px; border-radius: 22px; }
 .tip { color: #b6b6c8; font-size: 12px; line-height: 1.7; margin-top: 8px; }

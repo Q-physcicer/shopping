@@ -42,9 +42,12 @@ Axios.interceptors.response.use(
     return res;
   },
   error => {
-    // P1：网关统一鉴权，未登录返回 HTTP 401（业务 Result 里也是 401）
+    // P1：网关统一鉴权，未登录/登录过期返回 HTTP 401（业务 Result 里也是 401）
     if (error.response && error.response.status === 401) {
       Vue.prototype.notifyError((error.response.data && error.response.data.msg) || "请先登录");
+      // 登录过期/失效：清掉残留 token 与用户态，避免路由守卫因 cookie 存在而反复放行
+      document.cookie = "XM_TOKEN=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+      store.dispatch("setUser", "");
       // 修改vuex的showLogin状态,显示登录组件
       store.dispatch("setShowLogin", true);
       return Promise.reject(error);
@@ -60,12 +63,8 @@ router.beforeResolve((to, from, next) => {
   let cookie = document.cookie.match(new RegExp("(^| )"+ "XM_TOKEN" +"=([^;]*)(;|$)"));
   // const loginUser = store.state.user.user;
   // 判断路由是否设置相应校验用户权限
-  // console.log(to)
-  // console.log(store)
   if (to.meta.requireAuth) {
-    // console.log(loginUser)
     if (!cookie) {
-      // console.log(1)
       // 没有登录，显示登录组件
       store.dispatch("setShowLogin", true);
       if (from.name == null) {
@@ -114,6 +113,20 @@ import MyRegister from './components/MyRegister';
 Vue.component(MyRegister.name, MyRegister);
 
 Vue.config.productionTip = false;
+
+// v-imgerror：图片加载失败兜底为占位图（原裂图直裸奔）
+Vue.directive('imgerror', {
+  bind(el, binding) {
+    const fallback = binding.value || '/imgs/goods/placeholder.svg';
+    el.addEventListener('error', function onImgErr() {
+      if (el.src !== fallback) {
+        el.src = location.origin + fallback;
+      }
+      el.removeEventListener('error', onImgErr);
+    });
+  }
+});
+// eslint-disable-next-line no-console
 
 new Vue({
   router,

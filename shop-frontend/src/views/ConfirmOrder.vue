@@ -24,12 +24,13 @@
               :class="item.id == confirmAddress ? 'in-section' : ''"
               v-for="item in address"
               :key="item.id"
+              @click="confirmAddress = item.id"
             >
-              <h2>{{item.name}}</h2>
-              <p class="phone">{{item.phone}}</p>
-              <p class="address">{{item.address}}</p>
+              <h2>{{item.receiverName}}</h2>
+              <p class="phone">{{item.receiverPhone}}</p>
+              <p class="address">{{item.province || ''}}{{item.city || ''}}{{item.district || ''}} {{item.detailAddress}}</p>
             </li>
-            <li class="add-address">
+            <li class="add-address" @click="$router.push('/member/address')">
               <i class="el-icon-circle-plus-outline"></i>
               <p>添加新地址</p>
             </li>
@@ -44,7 +45,7 @@
         <div class="goods-list">
           <ul>
             <li v-for="item in getCheckGoods" :key="item.id">
-              <img :src="$target + item.productImg" />
+              <img v-imgerror :src="$target + item.productImg" />
               <span class="pro-name">{{item.productName}}</span>
               <span class="pro-price">{{item.price}}元 x {{item.num}}</span>
               <span class="pro-status"></span>
@@ -110,7 +111,9 @@
       <div class="section-bar">
         <div class="btn">
           <router-link to="/shoppingCart" class="btn-base btn-return">返回购物车</router-link>
-          <a href="javascript:void(0);" @click="addOrder" class="btn-base btn-primary">结算</a>
+          <a href="javascript:void(0);" @click="addOrder"
+             :class="['btn-base', 'btn-primary', { 'btn-disabled': submitting }]"
+             :style="submitting ? 'pointer-events:none;opacity:.6' : ''">{{ submitting ? "正在提交…" : "结算" }}</a>
         </div>
       </div>
       <!-- 结算导航END -->
@@ -125,17 +128,10 @@ export default {
   name: "ConfirmOrder",
   data() {
     return {
-      // 虚拟数据
-      confirmAddress: 1, // 选择的地址id
-      // 地址列表
-      address: [
-        {
-          id: 1,
-          name: "吴同学",
-          phone: "13333634203",
-          address: "湖北省 黄冈市 红安县"
-        }
-      ]
+      confirmAddress: null, // 选择的地址id
+      address: [], // 地址列表（从后端读取）
+      addressLoaded: false, // 地址拉取是否成功
+      submitting: false // 结算防连点（双击会重复下单重复收款）
     };
   },
   created() {
@@ -144,6 +140,8 @@ export default {
       this.notifyError("请勾选商品后再结算");
       this.$router.push({ path: "/shoppingCart" });
     }
+    // 读取收货地址（默认地址优先）；失败给出提示与重试（原静默空白易被误读为"没加过地址"）
+    this.loadAddress();
   },
   computed: {
     // 结算的商品数量; 结算商品总计; 结算商品信息
@@ -151,9 +149,41 @@ export default {
   },
   methods: {
     ...mapActions(["deleteShoppingCart"]),
-    addOrder() {
+    loadAddress() {
       this.$axios
-        .post("/api/order", this.getCheckGoods)
+        .get("/api/user/address")
+        .then(res => {
+          if (res.data.code) {
+            this.address = res.data.data || [];
+            if (this.address.length > 0) {
+              const def = this.address.find(a => a.isDefault === 1);
+              this.confirmAddress = (def || this.address[0]).id;
+            }
+            this.addressLoaded = true;
+          } else {
+            this.notifyError(res.data.msg || "地址加载失败");
+          }
+        })
+        .catch(() => {
+          this.notifyError("网络异常，地址加载失败，请重试");
+        });
+    },
+    addOrder() {
+      // 防连点：交易主链最要害的写操作，双击即重复订单
+      if (this.submitting) return;
+      // P0-6：地址必选
+      if (!this.confirmAddress) {
+        this.notifyError("请先选择收货地址");
+        return;
+      }
+      this.submitting = true;
+      // P0-6 新契约：只提交 productId/num/addressId，价格由服务端回查（防篡改）
+      const body = {
+        addressId: this.confirmAddress,
+        items: this.getCheckGoods.map(g => ({ productId: g.productId, num: g.num }))
+      };
+      this.$axios
+        .post("/api/order", body)
         .then(res => {
           let products = this.getCheckGoods;
           if(res.data.code){
@@ -172,8 +202,11 @@ export default {
             this.notifyError(res.data.msg);
           }
         })
-        .catch(err => {
-          return Promise.reject(err);
+        .catch(() => {
+          this.notifyError("网络异常，下单失败，请重试");
+        })
+        .finally(() => {
+          this.submitting = false;
         });
     }
   }
