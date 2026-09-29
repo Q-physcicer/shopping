@@ -1,45 +1,18 @@
 server:
   port: 8105
 
+# application.name/profiles 已迁 bootstrap.yml；mybatis-plus/autoconfigure.exclude/jackson 已上移 Nacos shop-common.yml（group SHOP）
+# （原 redis 块已删——pom 无 data-redis 依赖，属 P10 删依赖后的死配置）
 spring:
-  application:
-    name: shop-admin
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
   cloud:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:8.130.22.3:8848}
         username: ${NACOS_USERNAME:}
         password: ${NACOS_PASSWORD:}
+  # datasource 不上 Nacos（本地 application-local.yml 用它覆盖连旧库 shopmanagement）
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/shop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
-  data:
-    redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      database: 0
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
-      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
-
-mybatis-plus:
-  mapper-locations: classpath:mybatis/*.xml
-  global-config:
-    db-config:
-      id-type: auto
-      field-strategy: not_null
-      table-underline: true
-      logic-delete-field: deleted
-      logic-not-delete-value: 0
-      logic-delete-value: 1
-  configuration:
-    map-underscore-to-camel-case: true
-    cache-enabled: false
-
-jackson:
-  date-format: yyyy-MM-dd HH:mm:ss

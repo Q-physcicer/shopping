@@ -1,14 +1,13 @@
 server:
   port: 8106
 
+# application.name/profiles 已迁 bootstrap.yml；redis/jackson 已上移 Nacos shop-common.yml（group SHOP）
 spring:
-  application:
-    name: shop-chat
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
   mvc:
     async:
-      request-timeout: 180000   # SSE 流式响应超时（ms），与网关 response-timeout 对齐
+      # 本地显式保留（Nacos shop-common.yml 有同值 180000 双保险）：
+      # SSE 是 chat 命脉，若 Nacos 分发链路异常，本地兜底防止回退容器默认 30s 导致流中断
+      request-timeout: 180000
   cloud:
     nacos:
       discovery:
@@ -33,17 +32,3 @@ spring:
         type: SYNC
         capabilities:
           tool: true
-  data:
-    redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      database: 0
-      lettuce:
-        pool:
-          min-idle: 0
-          max-idle: 8
-          max-active: 8
-          max-wait: -1ms
-
-jackson:
-  date-format: yyyy-MM-dd HH:mm:ss

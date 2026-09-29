@@ -51,6 +51,7 @@ nbdist/
 # 本地敏感配置（不入库）
 **/application-local.yml
 application-local.yml
+**/bootstrap-local.yml
 .env*
 *.env.local
 

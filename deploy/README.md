@@ -12,7 +12,7 @@
 | MySQL | 8.0+（本地实测 8.4.11） | 业务库 shop | 3306 | 1 GB |
 | Redis | 6.2+ / 7.x | 秒杀预扣/JWT 黑名单/Agent 会话 | 6379 | 512 MB |
 | RabbitMQ | 3.13+ + management 插件 | 削峰/超时取消/ES 同步（**无需延迟插件**，TTL+死信原生实现） | 5672 / 15672 | 512 MB |
-| Nacos | 2.4.x standalone | 注册中心 | 8848 / 9848 | 768 MB |
+| Nacos | 2.x standalone（服务器实测 2.0.3） | 注册中心 + 配置中心（group SHOP） | 8848 / 9848 | 768 MB |
 | Elasticsearch | 8.14.x + **analysis-ik 同版本插件** | 商品搜索（未装即自动降级 MySQL，不阻塞） | 9200 | 堆 512m 即可 |
 | Nginx | 1.24+ | 双前端静态 + /api 反代 | 80 | 256 MB |
 | Node.js | 18 LTS（仅构建前端用） | npm run build | - | - |
@@ -28,9 +28,10 @@
 | 环境变量 | 说明 | 默认 |
 |---|---|---|
 | `NACOS_ADDR` | Nacos 地址（本机开发默认 8.130.22.3:8848） | 8.130.22.3:8848 |
+| `NACOS_USERNAME` / `NACOS_PASSWORD` | Nacos 账号（**仅服务端开启鉴权时**需注入；注册与配置同用） | 空 |
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | MySQL（部署时为服务器实例） | localhost:3306/shop / root / 空 |
 | `REDIS_HOST` / `REDIS_PORT` | Redis | localhost / 6379 |
-| `MQ_HOST` / `MQ_USERNAME` / `MQ_PASSWORD` | RabbitMQ | localhost / guest / guest |
+| `MQ_HOST` / `MQ_PORT` / `MQ_USERNAME` / `MQ_PASSWORD` | RabbitMQ | localhost / 5672 / guest / guest |
 | `ES_URI` / `ES_ENABLED` | ES 地址与开关 | http://8.130.22.3:9200 / **false** |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（chat/admin 服务） | demo |
 | `JWT_SECRET` | HS256 密钥（生产必须改，≥32 字符随机串） | dev 占位值 |
@@ -48,6 +49,23 @@ mysql -u root -p --default-character-set=utf8mb4 < sql/shop.sql
 
 > 历史增量 V1~V7 已整合进 shop.sql 并归档 `.trash/sql-legacy/`，新环境无需再按序执行多个文件。
 > 本地开发若沿用旧库名 shopmanagement：各服务 `application-local.yml` 已配置 `spring.datasource.url` 覆盖（该文件已 gitignore）。
+
+## 三·五、Nacos 配置中心（bootstrap 模式）
+
+各服务配 `bootstrap.yml`（spring-cloud-starter-bootstrap + nacos-config 依赖）拉取公共配置；`application-local.yml` 本地覆盖机制原样保留。
+
+**数据约定**：服务器 8.130.22.3:8848 为**多项目共享 Nacos**——本项目全部配置放独立 `SHOP` 组、dataId `shop-` 前缀（目前仅 `shop-common.yml`），**绝不动 DEFAULT_GROUP 内他项目 dataId**（application-common.yaml / shared-jwt.yaml / agent-*-prompt.txt 等）。
+
+**改动公共配置**：编辑 `deploy/nacos/shop-common.yml`（git 跟踪的源文件）→ 重跑 `bash scripts/nacos-config-upload.sh` → 重启各服务（配置中心是**分发**不是热更新：redis/mq/mybatis-plus 工厂早就实例化完，refresh:true 只对将来 @RefreshScope Bean 生效）。
+
+**上传脚本**：默认直传免鉴权服务器；服务端开鉴权时 `export NACOS_USERNAME=.. NACOS_PASSWORD=..`（自动 login 换 accessToken）；本地 compose Nacos 用 `NACOS_ADDR=localhost:8848`。幂等可重复执行。
+
+**优先级三条铁律**（bootstrap 模式下 Nacos 远端 > JVM -D > env > 本地 yml **含 local 覆盖**——远端对本地是键级完胜）：
+1. 敏感值（密码/密钥）**禁止**上 Nacos
+2. 需要 `application-local.yml` 覆盖的键（datasource.url 等）**禁止**上 Nacos——否则本地旧库覆盖会被远端打死
+3. 需要运维 env/`-D` 覆盖的键一律写 `${ENV:default}` 占位符——占位符在子上下文解析，env 注入照常生效
+
+**fail-fast**：bootstrap.yml 已设 `spring.cloud.nacos.config.fail-fast: true`——Nacos 不可达时服务**拒启**而非静默丢公共配置（mybatis-plus id-type=auto 丢失会导致雪花 id 写 int 自增列的数据事故）。代价：单机 Nacos 故障 = 全服务无法启动，属有意取舍。
 
 ## 四、构建产物
 

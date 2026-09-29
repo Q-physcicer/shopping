@@ -1,11 +1,8 @@
 server:
   port: 8080
 
+# application.name/profiles 已迁 bootstrap.yml（Nacos 配置中心需要先于主上下文确定）
 spring:
-  application:
-    name: shop-gateway
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
   cloud:
     nacos:
       discovery:
