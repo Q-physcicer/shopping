@@ -38,8 +38,8 @@ spring:
   rabbitmq:
     host: ${MQ_HOST:localhost}
     port: ${MQ_PORT:5672}
-    username: ${MQ_USERNAME:guest}
-    password: ${MQ_PASSWORD:guest}
+    username: ${MQ_USERNAME:}
+    password: ${MQ_PASSWORD:}
     # 发布确认基座（product 预扣库存回滚 / order TTL 消息 / admin ES 变更发布共有；
     # admin 此前 yml 无 rabbitmq 块只有 amqp 依赖——凭据非 guest 的环境下其发布会静默连不上，此次顺修）
     # ⚠️ listener.simple.acknowledge-mode=manual 是 order 特有差异，严禁上移（会波及 product 的 ES 消费端）

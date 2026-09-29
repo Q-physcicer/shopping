@@ -7,11 +7,11 @@ spring:
   # datasource 不上 Nacos（本地 application-local.yml 用它覆盖连旧库 shopmanagement）
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/shop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
-    username: ${DB_USERNAME:root}
+    username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
   elasticsearch:
-    uris: ${ES_URI:http://8.130.22.3:9200}
+    uris: ${ES_URI:}
 
 # ES 搜索（P3）：未装 ES 时置 false 走 MySQL LIKE 降级
 shop:

@@ -8,7 +8,7 @@ spring:
   cloud:
     nacos:
       config:
-        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
+        server-addr: ${NACOS_ADDR:}
         # 服务端开启鉴权时注入（与 discovery 同一约定）
         username: ${NACOS_USERNAME:}
         password: ${NACOS_PASSWORD:}
@@ -26,7 +26,7 @@ spring:
       # discovery 注册也归「连 Nacos」层，从 application.yml 迁入（原 7 份重复，归口一处）
       # 本机差异（cluster-name 等）在 bootstrap-local.yml，profile 变体优先级高于本文件可覆盖
       discovery:
-        server-addr: ${NACOS_ADDR:8.130.22.3:8848}
+        server-addr: ${NACOS_ADDR:}
         username: ${NACOS_USERNAME:}
         password: ${NACOS_PASSWORD:}
   config:
