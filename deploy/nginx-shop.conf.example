@@ -2,7 +2,7 @@
 # 部署路径假设：
 #   /opt/shop/shop-frontend-dist   购物端构建产物（npm run build 的 dist/*）
 #   /opt/shop/shop-admin-dist      管理端构建产物
-#   /opt/shop/public               静态资源（原 47.115.85.237:3000 的 public/imgs 迁移至此）
+#   /opt/shop/public               静态资源（shop-frontend/public 迁移至此，图片等走同源托管）
 # 网关跑在 127.0.0.1:8080；前端构建时用 VUE_APP_IMG_TARGET=/ 指向同源资源
 #
 # 安装：cp deploy/nginx-shop.conf.example /etc/nginx/conf.d/shop.conf（按需改路径）&& nginx -s reload

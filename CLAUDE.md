@@ -1,246 +1,119 @@
-# 星选商城 — 分布式升级项目指南
+# 星选商城 — 项目开发指南（AI 协作编码规范）
 
 ## 项目概述
 
-单体 Spring Boot 商城升级为 **Spring Cloud Alibaba 分布式微服务 + 双前端 + AI Agent/MCP**。
-购物端：Vue2（`shop-frontend`）；管理端：React + Ant Design Pro（`shop-admin-web`）。
+**Spring Cloud Alibaba 分布式微服务电商平台**：7 个业务服务 + API 网关 + 双前端（Vue 2 购物端 / React 管理端）+ AI Agent/MCP。数据库为单库 `shop`，多服务按表归属读写。
 
-## 目标架构
+固定版本组合（不要随意更改）：**JDK 17** | Spring Boot 3.4.6 | Spring Cloud 2024.0.1 | Spring Cloud Alibaba 2023.0.3.4 | Spring AI 1.0.0 | MyBatis-Plus 3.5.10 | jjwt 0.12.6 | mybatis-spring 3.0.4（父 POM 显式锁定，勿移除——MP 3.5.10 传递的 2.1.2 在 Spring 6.2 下 Mapper 注册会直接启动失败）
+
+## 目录结构与表归属
 
 ```
 shopping/
 ├── pom.xml                # 父 POM：聚合 + dependencyManagement
-├── shop-common/           # Result/XmException/JwtUtil/UserContext/Redis序列化
+├── shop-common/           # Result/XmException/JwtUtil/UserContext/Redis序列化/Feign身份透传
 ├── shop-feign-api/        # @FeignClient 接口 + 跨服务 DTO
-├── shop-gateway/  :8080   # SCG 网关 + JWT 鉴权过滤器
-├── shop-user/     :8101   # 登录/JWT 签发/BCrypt
-├── shop-product/  :8102   # 商品/分类/轮播/秒杀抢购/ES搜索/降级MySQL
+├── shop-gateway/  :8080   # SCG 网关 + JWT 鉴权过滤器（唯一公网入口）
+├── shop-user/     :8101   # 登录/JWT 签发/BCrypt/用户/地址
+├── shop-product/  :8102   # 商品/分类/轮播/图集/秒杀抢购/ES搜索(可降级MySQL)
 ├── shop-cart/     :8103   # 购物车/收藏
-├── shop-order/    :8104   # 订单/秒杀MQ消费/模拟支付/超时回滚
-├── shop-admin/    :8105   # 管理聚合接口 + 统计报表
-├── shop-chat/     :8106   # 双Agent + MCP Server(SSE)
-├── shop-frontend/         # Vue2 购物端 (dev 7080)
-├── shop-admin-web/        # React 管理端 (dev 7090)
-└── sql/                   # DDL（shop.sql 全量初始化，V1~V7 已整合归档 .trash）
+├── shop-order/    :8104   # 订单/秒杀MQ消费/模拟支付/超时取消回滚/售后
+├── shop-admin/    :8105   # 管理聚合接口 + 统计报表(经 Feign 聚合)
+├── shop-chat/     :8106   # 购物/管理双 Agent(SSE) + MCP Server（直连，不经网关）
+├── shop-frontend/         # Vue 2 购物端（dev 7080）
+├── shop-admin-web/        # React 管理端（dev 7090）
+├── svc.sh / svc.bat       # 服务启停脚本（双平台，含 fe/web 前端启动，日志在 <项目根>/logs/）
+├── nacos-config-upload.sh # Nacos 公共配置上传脚本（group=SHOP）
+├── sql/shop.sql           # 全量初始化脚本（15 表 + 种子数据，可重复执行）
+├── deploy/                # 部署指南、Nacos 公共配置源(deploy/nacos/shop-common.yml)、docker-compose、Nginx 示例
+└── demo-materials/        # 项目效果图
 ```
 
-### 关键技术决策（已拍板，不要更改）
+**表归属**（跨域写必须走 Feign，禁止跨服务直写他域表）：
+- product：`product` `category` `carousel` `product_picture` `seckill_time` `seckill_product`
+- order：`order` `seckill_message_record` `payment_record` `aftersale_record` `user_message`
+- user：`user` `user_address`
+- cart：`shopping_cart` `collect`
 
-- **版本组合**：Spring Boot 3.4.6 + Spring Cloud 2024.0.1 + Spring Cloud Alibaba 2023.0.3.4 + Spring AI 1.0.0 + jjwt 0.12.6 + MyBatis-Plus 3.5.10，JDK 17
-- **7 服务不分库**：共用 `shop` 单库（V1~V7 增量已整合为 sql/shop.sql 全量脚本，历史库名 shopmanagement），按表归属读写（product 拥有 product/category/carousel/product_picture/seckill_*；order 拥有 order/seckill_message_record；user 拥有 user；cart 拥有 shopping_cart/collect）。跨域写必须走 Feign（如下单扣库存 → `ProductClient.decrStock`）
-- **鉴权**：JWT HS256，payload `{uid, username, role, jti}`，exp 7 天；Cookie 名 `XM_TOKEN` 保留但值换 JWT；网关统一鉴权后注入 `X-User-Id/X-User-Role` header（必须先剥客户端伪造的同名 header）；Controller 一律从 header 取身份，禁止路径传 userId
-- **Agent 工具调用全走 Feign**，不直连 DB；用户身份经 `ChatClient.prompt().toolContext()` 注入，工具用 `ToolContext` 取，绝不让模型编造 userId
-- **MCP Server**：`spring-ai-starter-mcp-server-webmvc`（不能用 webflux 版，SSE controller 是 webmvc + Flux 混用），8106 直连不走网关
-- **配置中心**：bootstrap.yml + nacos-config + shared-configs `shop-common.yml`（group SHOP），公共配置统一 Nacos 分发；数据与铁律详见 P12 段
-- **ES 降级**：`shop.search.es-enabled=false` 或连接失败 → 自动降级 MySQL LIKE，保证没装 ES 也能跑
-- **秒杀**：Redis Lua 预扣（现有脚本复用）→ 本地消息表(SENT) → MQ `seckill_order` → order 消费落库（幂等 CAS）→ TTL 30min 死信超时取消 + 库存回滚；RabbitMQ 用原生 TTL+死信，不装延迟插件
-- **支付**：模拟收银台，`POST /pay/mock/{orderId}` 回调改状态
-- **密码**：BCrypt；登录时兼容旧 MD5 并透明升级落库
-- **部署**：本机开发（application-local.yml，gitignore）+ 服务器部署（application-server.yml）；DeepSeek key 从环境变量 `DEEPSEEK_API_KEY` 注入
+## 核心架构约定
 
-### 接口路径约定（网关路由）
+- **鉴权**：JWT HS256，payload `{uid, username, role, jti}`，exp 7 天；网关校验并注入 `X-User-Id/X-User-Name/X-User-Role`（先剥客户端伪造的同名 header）；业务服务经 common 的 UserContextInterceptor 注入 UserContext 取身份；登出走 Redis 黑名单 `auth:logout:{jti}` 网关统一拦截。
+- **服务间调用**：全走 shop-feign-api 的 OpenFeign 接口（如下单扣库存 → `ProductClient.decrStock`）；common 提供统一 Result 解包 ErrorDecoder 与身份透传拦截器（FeignIdentityInterceptor 借 UserContext 透传 X-User-*）。
+- **Agent 工具调用**一律走 Feign 不直连 DB；用户身份经 `ChatClient.prompt().toolContext()` 注入，工具用 `ToolContext` 取，绝不让模型编造 userId；**SSE 工具调用跑在 reactor 线程，ThreadLocal 不传播**——工具内须在工具线程上重建 UserContext。MCP Server 用 **webmvc 版 starter**（webflux 版与现有 Flux SSE controller 冲突），8106 直连不经网关；MCP 通道无登录态，写类工具由工具内二次校验拦截。
+- **配置中心**：bootstrap.yml + Nacos（group `SHOP`，dataId `shop-` 前缀），公共配置 `shop-common.yml`（源文件 deploy/nacos/shop-common.yml，改动后须重跑 `nacos-config-upload.sh` 并**重启服务**）；优先级：**Nacos 远端 > JVM -D > env > 本地 yml（含 application-local.yml）**。三条铁律：①敏感值禁上 Nacos；②需 local 覆盖的键（如 datasource.url）禁上；③需 env/-D 覆盖的键必须写成 `${ENV:default}` 占位符。
+- **搜索降级**：`shop.search.es-enabled=false`（默认）或 ES 连接失败 → 自动熔断降级 MySQL LIKE；重建索引成功后熔断标记自动复位。ES 依赖服务端 analysis-ik 插件。
+- **秒杀链路**：Sentinel 限流 → Redis 防重 + Lua 预扣 → 本地消息表 SENT → MQ `seckill_order` → order 消费幂等 CAS 落库 → TTL 30min 死信超时取消（CAS 与支付竞争互斥）+ Redis/DB 库存回滚。消息表状态机：product 抢购成功写 SENT，order 消费 CAS `SENT→CONSUMED` 抢处理权，失败回退重试，死信兜底 FAILED+回滚。RabbitMQ 用原生 TTL+死信，**不装延迟插件**。
+- **internal 接口双拦**：`/order/internal/`、`/product/internal/`、`/user/internal/` 由网关一律 403；服务端 internal 控制器内再补 ADMIN 硬校验（纵深防御，admin 经 FeignIdentityInterceptor 透传不受影响）。
+- **交易安全**：下单不信任客户端——价格一律服务端回查、num 钳 1~5、收件地址随单快照落库；支付/取消用 CAS 互斥（`payIfPending`/`cancelIfPending` 只赢一个）；售后仅退款状态机 `0待处理→1同意|2已拒绝`（拒绝后可重新申请新行，靠事务内锁父订单行防重复申请而非唯一键）。
 
-`/user/**`→user；`/product|/category|/productPicture|/resources/**`→product；`/seckill/**`→product；`/cart|/collect/**`→cart；`/order|/pay/**`→order；`/admin/**`→admin（需 ADMIN 角色）；`/chat|/agent/**`→chat；`/mcp` 不走网关。
+## 接口路径约定（网关路由）
 
-## 技术风险清单
+`/user/**`→user；`/product|/category|/productPicture|/resources/**` 与 `/seckill/**`→product；`/cart|/collect/**`→cart；`/order|/pay/**`→order；`/admin/**` 与 `/agent/admin/**`→admin/chat 且需 ADMIN 角色；`/chat/**`→chat（GET 白名单含匿名）；`/mcp` 不走网关（8106 直连）。
 
-| 风险 | 说明 | 应对 |
-|---|---|---|
-| **SCA 版本兼容** | SCA 2023.0.3.4 官方未对应 SC 2024.0 train，可能与 spring-cloud-commons 4.2.x 冲突 | P0 必须先版本冒烟：起 user 注册 Nacos + 网关转发成功才算通过；冲突则回退 SCA 2023.0.3.2 |
-| **SSE 过网关** | SCG 对 SSE 支持需禁缓冲/改写类 filter；response-timeout 要拉长 | `/chat/**` 路由不加 ResponseBodyModifier；`httpclient.response-timeout: 180s`；Nginx 生产关 `proxy_buffering` |
-| **MCP starter 与 webmvc** | spring-ai-starter-mcp-server-webflux 会与现有 `Flux<ServerSentEvent>` controller 冲突 | 必须用 webmvc 版 starter |
-| **DeepSeek Function Calling** | deepseek-chat 支持 FC 但偶发工具调用幻觉 | 工具描述写清晰；身份一律从 ToolContext 取；下单前工具内二次校验登录态 |
-| **ES 未安装不阻塞** | 服务器可能先跑起来再装 ES | 搜索开关 + try-catch 熔断标记降级 |
-| **Feign + Result 解包** | 各服务返回 `Result<T>` 包装，Feign 调用需要统一解包与错误传播 | shop-feign-api 提供 ErrorDecoder + fallback |
-| **存量数据兼容** | 旧 MD5 密码、旧订单无 status 字段 | 登录透明升级；DDL 存量订单 status 初始化为 1 |
-| **秒杀重复消费** | MQ 可能重投 | message_id 唯一索引 + 消费端 CAS(UPDATE WHERE status='SENT') |
-| **Sentinel 规则丢失** | 内存规则重启即丢 | 规则持久化到 Nacos dataId `shop-product-sentinel-flow.json` |
-| **多实例定时任务重复执行** | SeckillTask 无分布式锁 | Redis setnx 锁 |
+## 编码规范
 
-## 已知历史坑（来自过往会话）
+### 后端
 
-- 测试类不要依赖真实业务数据，聚焦 Spring 上下文装配验证
-- SSE 流式验证不能依赖 devServer（已关 gzip），要独立 curl 验证
-- MVC 异步超时 180s：P12 起全服务经 Nacos `shop-common.yml` 统一分发（此前实际只有 chat 落地过 MVC 侧 180000）+ 网关 httpclient 180s（gateway yml 本地持有）
-- `application-local.yml` 含真实密钥，已 gitignore，**不要提交**
-- 轮播数据中含绝对域名 `http://47.115.85.237:3000`，已由 V2__upgrade.sql 改相对路径
-- **mybatis-spring 版本锁定**（P0 实测）：MP 3.5.10 传递 mybatis-spring 2.1.2，在 Spring 6.2 下注册 Mapper Bean 报 `factoryBeanObjectType: java.lang.String` 直接启动失败。父 POM dependencyManagement 已锁 `org.mybatis:mybatis-spring:3.0.4`，**不要移除**
-- **改版本后必须 `mvn clean package`**：不 clean 时（尤其 `-T 1C` 并行）fat jar 里可能残留旧依赖，dependency:tree 显示新版但运行时是旧版，极具迷惑性
-- **curl 中文 query 必须 `--data-urlencode`**：`curl "http://...?message=中文"` 未编码会得到 Tomcat 400（HTTP 400 HTML 页），不是接口问题
-- 服务本地启停用 `bash scripts/svc.sh start|stop|status|restart [服务名]`（日志在 /tmp/shop-logs/<服务>.log）；stop 后 JVM 优雅退出需几秒，立即 start 会 [SKIP]，等 10s 再启动
-- 本机环境：MySQL(localhost:3306)/Redis(6379)/RabbitMQ(5672) 本地已装；Nacos 与 ES 用服务器 8.130.22.3（8848/9200），无 docker。ES 9200 当前未就绪（P3 前需确认服务端已监听 + 防火墙放行）
-- 旧单体 shop-backend 已迁移完毕并整体移入 .trash/shop-backend-migrated（git 未提交的删除记录待用户提交时生效）；xmall/ 保留仅作 P5 管理端布局参考
+- **身份获取**：Controller 一律从 header/UserContext 取身份，**禁止路径传 userId**；对外接口须校验资源归属防越权。
+- **MyBatis-Plus**：pojo 字段必须与表列对齐，非表字段标 `@TableField(exist=false)`；分页用 PaginationInnerInterceptor（maxLimit 200）且依赖 mybatis-plus-jsqlparser。
+- **shop-common 模块**：新写公共 Bean 若依赖 optional/provided 库，装配必须用 `@ConditionalOnClass(name="...")` 字符串形式（否则未引该依赖的服务启动即挂）。
+- **Cookie**：host-only，禁止 setDomain（会被 Cookie 规范拒绝导致登录态丢失）。
+- **XmException**：保持 `(ExceptionEnum)` 单参构造兼容（同时存在 message 透传的 (ExceptionEnum, String) 双参构造）。
+- **Feign 契约**：接口与实现签名变动必须同步 shop-feign-api，跨服务 DTO 放 feign-api 不放各服务。
+- **雪花 IdWorker**：各服务实例 workerId 必须错开，lastTimestamp 不加 static（防同毫秒撞号）。
+- **MQ 配置**：order 的 `acknowledge-mode: manual` 只能留在 order 本地，**严禁上移 Nacos 公共配置**（会波及 product 消费端）。
+- **SSE**：全服务 MVC 异步超时统一 180000（经 Nacos shop-common.yml 下发 + 网关 httpclient 180s）；chat 本地 yml 显式保留 mvc 180000 双保险。
+- **reactor 线程无 ThreadLocal**：SSE controller 里 uid 等身份信息须在请求线程捕获进闭包，doFinally/doOnCancel 内禁止读 UserContext。
+- **测试**：测试类不要依赖真实业务数据，聚焦 Spring 上下文装配验证。
 
-## P1 鉴权改造后的既定事实
+### 前端
 
-- **测试账号**：admin/admin123（role=ADMIN）；p1test/Test123456（普通用户）。admin 密码已透明升级为 BCrypt
-- **身份 headers**：网关 `AuthGlobalFilter` 校验 JWT 后注入 `X-User-Id/X-User-Name/X-User-Role` 并**先剥客户端伪造值**；业务服务用 `UserContext.getUserId()` 取身份（common 的 UserContextInterceptor 自动注册）
-- **坑：Cookie 禁止 setDomain**——`cookie.setDomain("localhost")` 会被 Cookie 规范拒绝导致登录态丢失，CookieUtil 已改为 host-only cookie（老 getDomainName 逻辑已删）
-- **坑：common 中新写公共 Bean 若依赖 optional/provided 库，必须 `@ConditionalOnClass(name="...")` 字符串形式**——否则没引该依赖的服务启动即挂（JwtUtil 踩过）
-- 业务 API 改动（购物端同步改完）：`GET /cart/user`、`POST /cart/product/{pid}`、`PUT /cart/user/num/{cartId}/{num}`、`DELETE /cart/user/{cartId}`、`GET|POST|DELETE /collect/user[...]`——路径不再带 userId；前端 401 拦截改看 HTTP 状态码
-- 登出黑名单：`POST /user/logout` → Redis `auth:logout:{jti}`，网关统一拦截
+- Vue2 渲染 AI Markdown：`marked@4 + DOMPurify`（bot 气泡 v-html 消毒，用户输出纯文本）；React 端用 `react-markdown + remark-gfm` 渲染为元素，**禁加 rehype-raw**。
+- 前端"停止生成"：`EventSource.close()` 不触发 onerror/done，必须自行 finish 收尾。
+- 图片前缀：`VUE_APP_IMG_TARGET`（默认 `/` 同源托管）；ES/MySQL 高亮统一 `<em>` 标签，前端做 `<em>` 白名单清洗防 XSS。
 
-## P2 秒杀闭环后的既定事实
+### 通用
 
-- **消息表状态机**（seckill_message_record，product/order 双端共写的基础设施表）：product 端抢购成功写 SENT、发布 NACK 置 FAILED；order 端消费 CAS `SENT→CONSUMED` 抢处理权，失败回退 `CONSUMED→SENT` 重试（3 次退避），死信兜底置 FAILED+Redis 库存回滚+清防重集合
-- **秒杀链路**（40 并发实测通过）：Sentinel 限流(QPS1000+热点参数 seckillId 200) → SADD 防重(key `seckill:product:user:set:{id}`) → Lua 预扣 → 消息表 SENT → MQ `seckill_order` → order 消费幂等落库(status=0 待支付) → TTL 30min 死信超时取消(CAS 与支付竞争防双写)+库存回滚（秒杀单/普通单都回滚）。压缩 TTL 演示用 `SVC_JAVA_OPTS="-Dshop.order.pay-timeout-ms=15000" bash scripts/svc.sh start order`
-- **坑：RabbitMQ per-message TTL 队头堵塞**——消息级 expiration 的死信只按队头逐条过期，30min 老消息会堵住后面 15s 的演示消息；验证短 TTL 前必须先清空 `order.pay.timeout.queue`（15672 管理 API 或管理台）
-- **坑：MyBatis-Plus pojo 字段必须与表列对齐**——SeckillProduct 的 version/deleted/createTime/updateTime 是遗留字段，已标 `@TableField(exist=false)`，否则 selectById 生成非法列 SQL 导致 MQ 消费反复失败
-- 验证脚本：`scripts/p2-verify.sh`（40 用户 20 并发抢 10 库存断言无超卖）、`scripts/p2-timeout-verify.sh`（短 TTL 取消+回滚）；测试用户 bkt1..bkt40/Test123456
-- 抢购前端交互：返回"排队中"后轮询 `GET /seckill/product/result/{seckillId}`，data 为 SENT(排队中)/CONSUMED(成功)/FAILED(失败已回滚)/null(未参与)
-- 已修复历史 bug：下单清购物车（原 deleteById(cart) 传实体恒删 0 行）、IdWorker 从未初始化（下单必 NPE）、CookieUtil.delCookie 构造后未 addCookie
-- 秒杀活动由 SeckillTask 每日 15:00 定时重建（Redis setnx 分布式锁）；手动造场次用 `scripts/p2-seed.sql`（注意时间戳单位是**毫秒**）
-
-## P3 搜索实现后的既定事实
-
-- 搜索接口：`GET /product/search?keyword=&categoryId=&sort=relevance|sales|price&page=&size=`（公开只读）；返回 `{total, page, size, engine, list}`，engine 标记 elasticsearch/mysql
-- **降级策略**：`shop.search.es-enabled`（env `ES_ENABLED`，默认 false）关闭或 ES 异常时自动熔断降级 MySQL LIKE；熔断标记在内存，重建索引成功后自动复位——服务器没装好 ES 系统照样能搜
-- ES 分词依赖服务端 `analysis-ik` 插件（ik_max_word 建索引/ik_smart 检索，productName^3/productTitle^2/productIntro 权重）；**服务器 8.130.22.3:9200 目前连不通，就绪后设 ES_ENABLED=true 重启 product 即切 ES**（代码已就绪，启动自动建索引+全量导入）
-- 高亮统一 `<em>` 标签（ES highlight 与 MySQL 替换两种实现），前端 SearchView 做了 `<em>` 白名单清洗防 XSS
-- 前端搜索：顶栏搜索框 → `/search?keyword=` 独立搜索页（分类筛选/排序/分页/高亮）；顺带发现顶栏全局图片前缀 `$target=http://47.115.85.237:3000/`（老图片服务器），P7 部署时统一切到新服务器 Nginx
-- 前端搜索页文件：`shop-frontend/src/views/SearchView.vue` + 路由 `/search`
-
-## P4 Agent/MCP 后的既定事实
-
-- **端点**：`GET /chat/stream`（购物 Agent 小智，网关 GET 白名单含匿名）、`GET /agent/admin/stream`（管理 Agent，网关 `/admin|/agent/admin` 走 ADMIN 校验——注意 admin-stream 在 gateway 白名单 `/chat/**` 之外）、`POST /chat/reset`
-- **工具集**（ShopTools，全走 Feign）：searchProducts/getProductDetail/addToCart/getMyCart/placeOrder/getMyOrders；AdminTools 骨架 adminSearchProducts（P5 扩全）
-- **身份链（关键设计）**：网关 JWT→X-User-Id→UserContext(ThreadLocal)→controller 放入 `prompt().toolContext(Map)`→工具方法从 ToolContext 取；**SSE 工具调用跑在 reactor 线程（boundedElastic），ThreadLocal 不传播**——ShopTools.callAsUser 在工具线程上重建 UserContext 供 FeignIdentityInterceptor 透传 X-User-*（P4 踩坑实测修复）
-- **Feign 身份透传**：common 的 FeignIdentityInterceptor（@ConditionalOnClass 装配），chat/order 等启用 @EnableFeignClients 的服务生效；信任边界=业务端口不对公网开放（P7 部署要求）
-- **会话记忆**：RedisChatMemoryRepository（List `chat:memory:{shop|admin}:u{userId}:{cid}`，窗口 20 条 TTL 7 天），跨用户隔离；MessageChatMemoryAdvisor 持久化多轮
-- **MCP Server**（8106 直连不经网关）：`GET /sse` 握手→`POST /mcp/message?sessionId=...`，tools/list 已验证暴露全部 7 工具（含 JSON Schema）；Claude Desktop 接入 `"url":"http://<ip>:8106/sse"`。MCP 通道无登录态→写类工具被"未登录"文案拦截
-- **坑：MCP starter 只暴露容器中的 ToolCallbackProvider bean**——ChatClient 的 defaultTools(...) 不进 MCP，必须另建 MethodToolCallbackProvider bean（AgentConfig.mcpToolProvider）
-- **实测**：登录用户「帮我把商品ID为4的Redmi 8下单一单」→ Agent 查详情→确认→Feign 下单→真实订单落库（status=0 待支付 30min TTL）→下一轮对话能凭记忆复述订单号；匿名只读可用、写操作引导登录
-
-## P5 管理端后的既定事实
-
-- **admin 服务**：`/admin/**` 网关校验 ADMIN；AdminProductController（上架/改价改库存/下架[库存置0]）、AdminOpsController（分类/轮播/秒杀新增/用户角色/订单分页[Feign]/统计聚合[Feign×3]/ES重建[Feign]）
-- **统计口径**：GMV=status IN(1,3) 的 price*num；多服务 internal 接口：`/product/internal/stats/top-sales|low-stock`、`/order/internal/stats/gmv`、`/user/internal/stats/count|growth`（V3 增量给 user 加了 created_at 列，存量行为迁移时刻）
-- **ES 增量同步链**（admin 发 MQ → product 消费同步）：admin 改商品 → publish topic exchange `shop.product.change`(key=product.update) → product `ProductChangeConsumer` 读库 syncOne；同步失败不阻塞管理操作，重建按钮兜底
-- **管理 Agent**（chat）：AdminTools 五工具（adminSearchProducts/publishProduct/updateProduct/getStats），写操作**工具内硬校验 role=ADMIN**（chat 直连 Feign 不经网关，网关 JWT 角色之外的第二道闸）；MCP 外部通道同样被拦
-- **网关**：`/agent/admin/**` 路由到 chat 服务（不设 ADMIN 路由位），AuthGlobalFilter 对 `/admin|/agent/admin` 都做 ADMIN 校验
-- **React 管理端**（`shop-admin-web/`，Vite+React18+antd5+pro-components+recharts，dev 7090）：Login/Dashboard(GMV曲线/注册柱状/Top表)/Products/Seckill/Carousels/Orders/Users/AgentChat(EventSource SSE)/Settings；JWT 存 localStorage + Authorization Bearer，登录时后端 Set-Cookie 供 EventSource 用；`npm run build` 已通过
-- React 端 axios 拦截器直接解包 Result 返回 data（code!=1 reject）；HTTP 401 踢回登录页
-
-## P6 模拟支付后的既定事实
-
-- **链路**：购物车结算下下单返回 orderId → 前端直跳 `/pay/:orderId` 模拟收银台（金额/商品数/状态态）→ `POST /pay/mock/{orderId}` → `OrderMapper.payIfPending` CAS(0→1) + payment_record 流水（雪花 payNo "MOCK"+id）→ 轮询确认 → 支付成功页
-- **状态机闭环**：`payIfPending` 与 `cancelIfPending`（超时取消）CAS 互斥，支付与取消只赢一个；已取消订单支付返回"不可支付"；PayController 按 userId 校验订单归属防越权（实测通过）
-- 订单页（OrderVirw.vue）显示状态徽标（待支付/已支付/已取消[超时]/已完成）+ 秒杀单标识 + 待支付"去支付"按钮；addOrder 响应带 orderId
-- **ES 现状**：~~7.17 无 ik 降级~~ → **已在 P7 收尾切换为 ES 8.19.20 + ik 正式模式**（见 P7 段）；降级机制保留，ES 异常时自动回退 MySQL 不影响可用性
-
-## P7 部署打磨后的既定事实（收尾联调 2026-09-25 更新）
-
-- **ES 已切换为 Elasticsearch 8.19.20 + analysis-ik 模式**（联调实测）：启动自动建索引+全量导入 35 条；「骁龙」等中文语义分词搜索/`<em>` 高亮/分类过滤/销量价格排序全可用；admin 上架→MQ 同步→3 秒内可搜、下架→即时移出索引、`/admin/es/rebuild` 全量重建 35 条——**本地启用方式：`SVC_JAVA_OPTS="-Dshop.search.es-enabled=true" bash scripts/svc.sh start product`（或 env ES_ENABLED=true）**
-- 已修复：`AdminProductController.create` 上架未传 productTitle 时 NOT NULL 报错（现用商品名兜底截断）
-- **已清理无关代码**：SeckillProductController 过渡新增接口与 ServiceImpl.addSeckillProduct 死代码已下线（秒杀管理仅走 /admin/seckill）；scripts/migrate-p0.sh 删除；xmall/（参考项目）与 images/（旧产物）移入 .trash/；.gitignore 已追加 .trash/
-- **全链路联调（2026-09-25 实测 32 项全绿）**：后端 23 项冒烟（公开链路/鉴权/越权/管理聚合/支付闭环/秒杀轮询）+ Agent 搜索工具 + MCP 10 工具（购物 6+管理 4）+ 双前端 devServer 代理链 + SSE 经 7080/7090 代理（Agent 实时对话）全部通过
-
-## P8 百货化改版（2026-09-28）
-
-- **数据（sql/V4__mall_goods.sql）**：删除小米全家桶，8 大百货分类 × 33 件商品（数码家电/家居日用/美妆个护/食品生鲜/服饰鞋包/运动户外/母婴玩具/图书文具）+ 3 张新轮播 + 2 个秒杀场次（801 进行中/802 即将开始）；历史测试订单/购物车/收藏/支付流水已清（用户账号保留）；**执行时必须 mysql --default-character-set=utf8mb4（SQL 内已加 SET_NAMES）**；product_title 列已加宽 varchar(60)
-- **图片全本地化**：`shop-frontend/public/imgs/{goods,carousel,promo}/` 共 41 张 SVG（`scripts/gen-goods-svg.py` 生成，可重跑定制）；$target 默认改为 `/`（本地/Nginx 同源托管），不再依赖外部 47.115.85.237 资源服务器；管理端商品列表已加缩略图列
-- **管理端导航修复**：ProLayout 菜单默认不与 react-router 联动，`menuItemRender={(item,dom)=><Link to={item.path}>{dom}</Link>}` 接管 + useLocation() 提供当前高亮
-- **购物端 xmall 风格改版**：GoodsView 重写为左侧分类栏（渐变高亮）+ 排序条（综合/销量/价格）+ 网格卡片 + 分页；HomeView 重写为动态分类区块（前 4 分类：促销竖图 + 商品网格 + 查看全部直达）；MyList 卡片圆角化 + 修复 category_id→categoryId 名 bug；ES 已重建 33 条，中文语义搜索（坚果/防晒等跨品类命中）正常
-
-- **部署文档**：`deploy/README.md`（中间件清单/环境变量约定/DDL 顺序/构建产物/服务器部署/验证清单/Claude Desktop MCP 接入/FAQ）；Nginx 配置示例 `deploy/nginx-shop.conf.example`（双前端+静态资源+/api 反代+SSE 禁缓冲+剥伪造身份 header 双保险）
-- `scripts/svc.sh` 的 ROOT 支持 `SHOP_HOME` 环境变量覆盖——服务器同脚本复用；`SVC_JAVA_OPTS` 传自定义 JVM 参数
-- 前端图片前缀 `VUE_APP_IMG_TARGET`（默认老资源服务器 47.115.85.237:3000；生产构建设 `/` 走同源 Nginx 托管 public/）；首页轮播已修复为 `$target + imgPath`（V2 相对路径后漏拼，实为裂图 bug）
-- 管理端生产 base 路径按需在 vite.config.js 设置 `base:'/admin/'`（Nginx 同端口目录部署），或用独立域名
-- 全链路验收（2026-09-25）：7 服务 Nacos healthy；分类/搜索(降级)/秒杀场/登录/管理统计/越权 403/匿名 401 全通过；双前端 build 通过
-- 服务器部署安全三条底线：业务端口不对公网开放（X-User-* 信任边界）、`JWT_SECRET` 生产必换、MCP 8106 加白名单或内网访问
-
-## P9 AI 对话完善：售后闭环 + 用户画像 + 体验修复（2026-09-28）
-
-- **售后闭环（仅退款，order 域 own）**：`aftersale_record` 表（V5__aftersale.sql，手工执行非 Flyway）。状态机 `0待处理→1同意(退款完成)|2已拒绝`（终态，拒绝可重新申请新行）。接口：用户 `POST /order/aftersale/apply`、`GET /order/aftersale/my`；管理 `GET/POST /order/internal/aftersale/page|handle`（**order 端硬校验 ADMIN**，因 /order/internal/** 网关直穿可达，不能只靠"没人知道"防护），admin 聚合 `GET/POST /admin/aftersale/page|handle` 转发。政策：已支付订单(状态1/3)支付后7天内可申请仅退款；待支付引导支付、已取消/超期如实拒绝。`shop.aftersale.apply-window-days` 可配
-- **防重复申请不能用 MySQL 唯一键**（无 partial index，终态重申请会撞键）→ `AftersaleServiceImpl.apply` 事务内 `AftersaleMapper.lockOrderRow FOR UPDATE` 锁父订单行 + 检查无 status=0 售后单。审批/拒绝 CAS `WHERE status=0`（仿 payIfPending），双管理员并发只赢一个
-- **IdWorker workerId 错开**：AftersaleServiceImpl 用 `new IdWorker(2,1)`，与 OrderServiceImpl(1,1) 不同 workerId，防同毫秒雪花撞号
-- **Agent 售后工具**（ShopTools，全走 Feign）：`applyAfterSale(orderId, productId, reason)` / `getMyAfterSales`，new 工具自动进 MCP Server（mcpToolProvider 注册 bean 对象，无需配置）。提示词加售后策略段（先 getMyOrders 定位→如实讲政策→确认理由→申请→保守话术不承诺"马上退款"）+ 空列表友好应对段。实测："每日坚果订单怎么售后"→Agent 查单→表格呈现→确认哪笔+理由
-- **无订单友好提示**：`OrderServiceImpl.getOrder` 删除空订单抛 GET_ORDER_NOT_FOUND 的逻辑（原让 Agent 把"无记录"当"查询失败"），改为返回空列表
-- **轻量用户画像（长期记忆）**：`UserProfileService`，Redis Hash `chat:profile:u{userId}`（preferredCategories/interestedProducts/styleNote，TTL 30 天）。每轮流结束 `AiChatController.stream()` 的 `doFinally` 异步 `Schedulers.boundedElastic` 调 DeepSeek 提炼（temperature 0.2，门控：登录用户+消息≥10字），异常吞掉不影响对话。注入：`prompt().system(SHOP_PERSONA + profileBlock)`——**request 级 .system() 覆盖 defaultSystem 而非追加**，persona 必须一并传（AgentConfig 抽 `public static final SHOP_PERSONA/ADMIN_PERSONA`）。仅购物 Agent 接入画像，管理 Agent 不做。画像只从 Redis 本地读，最近订单交由工具按需查（避免每轮多一次 Feign）。实测：会话1说"只喝手冲咖啡预算200浅烘阿拉比卡"→Redis 写入三字段→全新会话2问"根据喜好推荐"→直接引用偏好+实搜
-- **reactor 线程无 ThreadLocal**：uid 必须在 controller 请求线程捕获进闭包，doFinally/doOnCancel 里禁止读 UserContext
-- **体验修复**：①Markdown 渲染——Vue2 用 `marked@4 + DOMPurify`（bot 气泡 v-html 消毒，用户气泡纯文本；vue-markdown 未维护不选用），React 用 `react-markdown + remark-gfm`（渲染为元素不输出 raw HTML 天然防 XSS，禁加 rehype-raw）；②停止生成——前端 `EventSource.close()` 不触发 onerror/done 必须自行 finish 收尾，后端 stream() 加 `doOnCancel/doFinally`；③placeOrder 工具 num 钳制 `Math.min(Math.max(num,1),5)` 防模型幻觉值；④shop-admin 删除死配置（`spring-ai-starter-model-openai` 依赖 + application.yml/local.yml 的 `spring.ai` 块，无任何 ChatModel 代码引用）
-- **验收**：售后服务闭环 9 步全绿（下单→支付→申请→重复拦截→分页→拒绝→CAS二次拦截→查结果）；越权(USER 打 handle)被 order 端硬校验拦截；画像提炼+跨会话注入 profileInj=y；后端 `mvn clean package` 全绿；双前端 build 通过
-- 新增前端文件：`shop-admin-web/src/pages/Aftersales.jsx`（售后审批页，菜单路由 /aftersales，CustomerServiceOutlined 图标）；后端新增 `AftersaleRecord/AftersaleVo/AftersaleMapper/AftersaleServiceImpl/AftersaleController` + `shop-feign-api/AftersaleApplyRequest` + `shop-chat/profile/UserProfileService`
-
-## P10 三期修复：资损/安全加固 + 交互修复 + 体验质量（2026-09-28）
-
-全面可用性评估（3 路并行排查+逐项复核）后按 P0/P1/P2 三期修复约 40 项。
-
-### P0 资损/安全（已冒烟验证全绿）
-- **下单不信任客户端**：`POST /order` 新契约 `{items:[{productId,num}], addressId}`（`OrderCreateRequest`），价格一律服务端回查 `productSellingPrice`（实测 price=0.01 落库 1499）；num 钳 1-5（负数/99 拒绝）；`updateCartNum` 同口径（堵负数下单反向加库存）
-- **库存乐观锁重试耗尽必抛**（原静默放行=超卖）；**支付三连写事务化**：`OrderServiceImpl.payMock` @Transactional（CAS→流水→消息），PayController 薄壳
-- **internal 双拦**：网关 AuthGlobalFilter 对 `/order/internal/`、`/product/internal/`、`/user/internal/` 一律 403；服务端（order/user/product 的 internal 控制器 + SearchController.rebuild）补 ADMIN 硬校验（纵深防御，admin 经 FeignIdentityInterceptor 透传不受影响）
-- **分页插件**：MP 3.5.10 需另引 `mybatis-plus-jsqlparser`（父 POM 管版本，common provided + 5 业务服务 compile）；`PaginationInnerInterceptor(MYSQL).maxLimit=200`——修复"前 8 条"实际全表（此前热销榜返回全部 33 条）
-- **地址随单落库（V7 DDL）**：order 表加 receiver_name/phone/address 三快照列；OrderServiceImpl 经 Feign 回查 user 地址（`GET /user/address/internal/{id}` 与 `/internal/default`，本人归属校验），无地址不阻塞交易；收银台 cashier 返回收件信息
-- **登出黑名单覆盖 GET 白名单**：`passWithOptionalIdentity` 同样查 `auth:logout:{jti}`，命中按匿名放行（堵"登出后旧 JWT 驱动 Agent 代客写"）
-- **角色切换防护**：不能改自己、最后一名 ADMIN 不可降级；角色变更的 7 天 token 滞后窗口写入 deploy/README.md 安全线
-- **V7__order_hardening.sql**：order 表 3 快照列 + shopping_cart/collect 去重加 `UNIQUE(user_id, product_id)`（收藏重复插入后 delete 删 2 行报错、永远删不干净）+ seckill_time.source 列（auto/manual）
-
-### P1 功能正确性 + 交互主链
-- **购物车 fall-through**：success("002") 缺 return 被 001 覆盖（前端 vuex 塞 num=null）已修；限购超限返回业务码 "003"（原抛异常→code=0，前端 case"003" 死分支、按钮永不置灰）
-- **商品编辑假成功**：AdminProductController 白名单补 productName/categoryId/productPicture + 数字校验（非数字/负价/负库存拒绝）+ 乐观锁返回值检查（并发冲突如实报错）；Title 截断统一 60（对齐 V4 列宽）
-- **管理订单能力**：`/order/internal/page` 返回 {list,total} + orderId like 搜索 + size 钳 100；`POST /order/internal/done`（CAS 1→3，状态 3 原永不可达）+ admin 转发 + Orders 页"标记完成"
-- **秒杀管理正轨化**：admin 直插 product 域表改 Feign 调 `POST /seckill/admin/add`（product 端写库+校验 价格≤售价/库存≤商品库存+**失效列表缓存** `seckill:product:list:{timeId}`）；SeckillTask 每日重建只清 auto 场，manual 场与其商品保留（原手动场次日下午 3 点被无声清空）
-- **站内信完善**：下单成功也 push（TYPE_ORDER_CREATED，原只有取消/支付有）；`listByUser` LIMIT 100；readAll 返回真实标记数（原 >=0 恒真）
-- **购物端交互**：结算/售后/资料/加购全部防连点（submitting+disabled/loading）；member 五页 14 处 `catch(()=>{})` 清零（网络失败可见提示）；地址/手机表单校验（rules+maxlength 对齐列宽）；删除地址/消息加 $confirm；收藏删除即时消失（MyList splice 被注释→emit 父组件移除，MySeckillList 同修+categoryId/snake_case bug+划线价比较字段）；未读徽标 30s 轮询+refresh-unread 全局事件（支付后即时刷新）；退出登录离开受限页+401 静默；购物车未勾选去结算给提示
-- **管理端交互**：Products 筛选 stale closure（setTimeout(load) 旧闭包→useEffect 依赖数组）；编辑表单先 resetFields；Dashboard 数据源失败如实显示（原静默 ¥0 假数据+无限 Spin）+ days 7/30 切换；Orders 真 total+订单号搜索+loading；AgentChat reset 走 api 实例（原生 fetch 假成功）；axios 拦截器 Success.msg 附 `__msg`（Settings/Users/Products 消费真实文案）；401 带 ?redirect= 回跳原页
-
-### P2 体验/质量
-- 购物端：404 兜底（NotFound.vue + `path:'*'`）；路由重名 Details→GoodsDetails/SeckillDetails；ErrorPage 加文案+返回按钮；订单/购物车/收藏空态"去逛逛"CTA；价格排序升降切换（sortAsc 真启用）；秒杀 tabs 初始自动选中+SeckillView 全量重写（清 60+ 行死代码）；秒杀详情倒计时/轮询句柄可清理（deactivated/beforeDestroy）+ 抢购结果后恢复可交互；PayView 轮询同修；全局 `v-imgerror` 指令+placeholder.svg（9 处应用）；SearchView 空关键词提示；HomeView PROMO 取模兜底；Details/SeckillDetails style 加 scoped+空目标死链删除；vue-markdown/AboutView/MyMarkdown 死代码移 .trash
-- 管理端：ErrorBoundary（渲染异常降级）；Login 去 admin 预填；vite 代理 `/imgs`→7080（缩略图/轮播预览不再裂）；Seckill 状态 60s 自动刷新+商品下拉可搜索+来源列（手动场/定时场标签）；dayjs 死依赖删+`npm run start` 别名补
-- 后端/通用：收藏/购物车 UNIQUE 竞态（V7）；默认地址 clearDefault 原子化+isDefault 枚举钳制；IdWorker.lastTimestamp 去 static（原跨实例共享致同毫秒撞号）；SearchController/用户分页 size 钳 100；XmExceptionHandler 兜底（NumberFormatException/DataIntegrityViolation→"参数错误"而非裸 500 跳 /error 丢表单）；UserClient.getByUsername 幽灵方法删；shop-admin 死代码（OrderMapper/pojo/SeckillProduct 整套）+ pom 死依赖（fastjson/redis/commons-pool2）；AdminTools.callAs parse 兜底；画像字段截 200 字+写入续期（防超长文本注入 system prompt）；网关 CORS 收紧 `CORS_ORIGINS` env（默认 localhost:7080/7090，原 `"*"+credentials`）；JwtUtil 默认密钥启动告警
-
-### 坑与事实
-- **XmException 补单 String 构造**（message 透传），@AllArgsConstructor 现生成 (ExceptionEnum,String) 双参——存量 `new XmException(enum)` 靠补的单参构造兼容
-- **SeckillView/CollectView 的 activated 每次进入重拉数据**（keep-alive 正确姿势）；MyList 删除后 emit `item-deleted` 由父组件 splice（vue/no-mutating-props）
-- **svc.sh restart 有 stop 优雅退出时序竞态**：stop→立即 start 会 [SKIP]，需 sleep 10-15s 再补 start
-- admin uid 以 user 表为准（admin=6）；管理端角色测试勿用猜测 uid
-
-## P11 SQL 整合 + 库名 shop（2026-09-29）
-
-- **sql/shop.sql**：V1~V7 七个增量脚本整合为单文件全量初始化（最终态合并：V1 表结构 + V2/V3/V4/V7 列改/索引/唯一键并进 CREATE TABLE + V4 百货数据 + V1 用户种数据）。头部 `CREATE DATABASE IF NOT EXISTS shop` + `USE shop`（根治 V1 不指定库落错库的坑）；DROP+CREATE 可重复执行；**整合态作废项**（注意勿照搬旧增量逻辑）：V2 的 UPDATE role/轮播路径/存量订单与「INSERT admin WHERE NOT EXISTS」兜底、V7 的去重 DELETE——最终态数据直接以终值 INSERT。15 张表与现库 informaton_schema 结构对拍（列/索引）**完全一致**；临时库 sed 换名纯净执行验证通过（15 表/行数 8:33:3:2:5:20:0 全对）
-- **修正 V1 遗留 bug**：admin 密码哈希原为 `MD5('a123456')`（与用户 a123456/bababa 同哈希），并非文档承诺的 admin123——shop.sql 已改为 `MD5('admin123')`，新环境 admin/admin123 开箱即用（登录时 BCrypt 透明升级逻辑兜底）
-- **product_picture 只建表不插数据**：V4 百货化后遗留 110 条死路径数据（public/imgs/phone/picture/ 已不存在）不再种子
-- **库名引用全局替换 shopmanagement→shop**：5 个 DB 服务 application.yml 的 DB_URL 默认值、scripts/p2-seed.sql（USE 行删除，命令行选库）、p2-verify.sh / p2-timeout-verify.sh（`${DB_NAME:-shop}`，本地旧库 `DB_NAME=shopmanagement`）、deploy/README.md（组件表/DB_URL 默认值/DDL 段单命令重写，顺带修正 MySQL 版本备注 8.4.11、ES 备注对齐 P7 事实）；CLAUDE.md 结构树与架构决策段同步——**P1~P10 历史段一字未改**（对 V 文件名的引用是史实）
-- **本地不迁移数据库**：本地 5 个服务的 application-local.yml（gitignored）加 `spring.datasource.url` 行覆盖连 shopmanagement（既有 62 用户/bkt 压测账号/订单/秒杀场 803 等本地数据原样保留）；git 默认 shop——他人 clone 后建库/连库均为 shop，本地与远端两套并行互不干扰
-- **历史坑归档发现**：现库 V2/V5/V6 的中文列注释为双重编码 mojibake 或 `?`（V7 后执行的部分是乱码、部分正常——V2 用户表注释×4 脏、V5/V6 整表注释脏；源于当时客户端未带 `--default-character-set=utf8mb4`）。shop.sql 从干净源重写所有注释；本地库如需扶正可对受影响列执行同定义 MODIFY COLUMN 换正常注释（非必需，不影响功能）
-- V1~V7 归档至 `.trash/sql-legacy/`（shop.sql 验证通过后执行；V1~V5 git 显示 deleted、V6/V7 平移无记录，删除记录留给用户提交时生效）
-
-## P12 配置中心：bootstrap + Nacos 公共配置（2026-09-29）
-
-- **结构**：7 服务各建 `bootstrap.yml`（name/profiles 迁入此层 + `spring.cloud.nacos.config`：server-addr/group SHOP/file-extension yml/**fail-fast true**/shared-configs `{data-id: shop-common.yml, group: SHOP, refresh: true}`）+ `spring.config.fail-fast: true` 兜底；pom 各加 `spring-cloud-starter-alibaba-nacos-config` + `spring-cloud-starter-bootstrap`（BOM 管版本）。公共配置源文件 `deploy/nacos/shop-common.yml`（git 跟踪）：mybatis-plus 全块、redis（占位符）、rabbitmq 连接基座+publisher-confirm、`spring.mvc.async.request-timeout: 180000`（全服务 SSE 对齐）、`spring.jackson.date-format`、autoconfigure.exclude 两条（防御性 inert）
-- **上传**：`bash scripts/nacos-config-upload.sh`（dataId=文件名/group SHOP/type yaml/`--data-urlencode content@file`；免鉴权直传或 NACOS_USERNAME/PASSWORD 自动 login 换 accessToken；幂等=覆盖）。改公共配置流程：改源文件→重跑脚本→**重启服务**（配置中心是分发不是热更新——SqlSessionFactory/连接工厂启动期已实例化，refresh 只对未来 @RefreshScope 生效）
-- **共享 Nacos 隔离（关键环境事实）**：8.130.22.3:8848 服务器实测 **2.0.3、多项目共用**——DEFAULT_GROUP 有他项目 9 个 dataId（application-common.yaml/shared-jwt.yaml/agent-*-prompt.txt）。本项目一切配置只进 **SHOP 组 + shop- 前缀**，与 discovery 的 DEFAULT_GROUP 服务注册（nacos registry 默认组，勿混淆）分开，脚本绝不触碰他组 dataId
-- **优先级三条铁律（必守）**：bootstrap 模式远端 > JVM -D > env > 本地 yml **含 application-local.yml**（PropertySourceBootstrapConfiguration addFirst）。①敏感值禁上；②需 local 覆盖的键（datasource.url——本地连旧库 shopmanagement 的机制）禁上；③需 env/-D 覆盖的键必须 `${ENV:default}` 占位符（占位符在子上下文解析，env 注入照常生效）。datasource/jwt.secret/ai key/es-enabled/cors/routes 等全部留本地
-- **fail-fast 取舍**：Nacos 不可达=服务拒启（mybatis-plus id-type 丢失会退化雪花 id 写 int 自增列，静默比失败危险）；单点故障半径全服务，README 已记
-- **application.yml 瘦身结果**：删 name/profiles/公共块；服务特有全留本地——gateway（routes/globalcors/httpclient 180s/jwt/logging）、user（jwt+datasource）、product（es 开关+uris+datasource）、order（**仅留 listener manual ack**——严禁上移，会波及 product ES 消费端）、admin（删 pom 无依赖的死 redis 块；MQ 占位补齐=顺修 admin 非 guest 凭据环境连不上 MQ 的隐雷）、chat（**mvc 180000 显式保留**双保险防 Nacos 链路异常回退容器 30s 断 SSE；ai/mcp 整块）
-- **顺修**：①`SPRING_PRO_FILES_ACTIVE` 拼写修正为 `SPRING_PROFILES_ACTIVE`（原占位符名无人设过 env，README 的 env 切 profile 从未真正生效，迁移时借 bootstrap.yml 修正）；②jackson 层级修正（原 7 份 yml 误放顶级 `jackson.*` 从未生效上移为 `spring.jackson.*`——注意 MVC 实际序列化走 shop-common JacksonConfig 的 @Bean ObjectMapper，此键为预留位，**别误以为改配置能改日期格式**）
-- **验证实测（7 服务全起）**：`~/logs/nacos/config.log` 三条 NacosConfigService init 对应三服务；MP id-type=auto 铁证=注册 cen1 落库 user_id=76 int 自增；product 启动即连 MQ（远端 rabbitmq 基座）；登录 admin/网关路由/搜索降级/加购/admin 统计聚合/DeepSeek SSE 全绿；本地 local yml 覆盖连 shopmanagement 未被远端打死（铁律 2 生效）。验证完已清测试数据并恢复停机
-- 本地开发想绕开 Nacos 联网启动：理论上可临时注掉 bootstrap.yml 的 shared-configs，但**不建议**——公共配置缺失会静默退化，宁可等 Nacos
-
-## 详情页图片修复（2026-09-29）
-
-- **根因**：购物端详情页（DetailsView.vue）调 `/productPicture/product/{id}` 查 `product_picture` 表，但 P8 百货化后该表未清未种——本地库残存 110 条小米时代死路径（`public/imgs/phone/picture/...`），商品 9+ 甚至查不到（原实现空列表直接抛 GET_PRODUCT_PICTURE_NOT_FOUND）
-- **修复双管齐下**：①`ProductPictureServiceImpl` 空列表时回退用 `product.product_picture` 主图合成一条（intro=商品名），不再抛异常——任何全新环境详情页都有图；②本地库 `DELETE FROM product_picture; INSERT ... SELECT product_id, product_picture, product_name FROM product;` 重建 33 行有效 SVG 路径（死路径残存时兜底不触发，必须清数据）
-- shop.sql 维持 P11 决策不种子该表（代码兜底已覆盖全新环境）；实测 8102 直连 4 个商品返回有效路径 + 空记录走兜底（id=null 合成条目）全通过
+- **改依赖/版本后必须 `mvn clean package`**：不 clean 时（尤其 `-T 1C` 并行）fat jar 可能残留旧依赖，dependency:tree 显示新版但运行时是旧版。
+- curl 中文 query 必须 `--data-urlencode`（不编码会得到 Tomcat 400 HTML 页，不是接口问题）。
+- `application-local.yml` 含真实密钥已 gitignore，**不要提交**；需要本地覆盖连接信息/密钥时优先写 local 文件或用环境变量。
+- 注释、文案、文档一律中文；提交信息简短中文。
+- 服务器地址等环境信息一律不出现在文档/脚本中，用 `你的服务器地址` 占位（端口与 localhost 可保留）。
 
 ## 构建与验证
 
 ```bash
 # 后端全模块构建（改过依赖版本必须 clean）
 mvn clean package -DskipTests
-# 服务启停（P0 起 7 服务均正常注册 Nacos + 网关转发）
-bash scripts/svc.sh start          # 全部启动；可带参数只操作某服务
-bash scripts/svc.sh status         # /tmp/shop-logs/<svc>.log 看日志
-# 购物端
-cd shop-frontend && npm run serve   # 7080，代理 /api → localhost:8080（网关）
-# 管理端
-cd shop-admin-web && npm run start  # 7090，代理 /api → localhost:8080（P5 建）
-# 中间件：MySQL/Redis/RabbitMQ 本机；Nacos/ES 服务器 8.130.22.3（P0 已验证注册健康）
+
+# 服务启停（双平台命令一致；日志在项目根 logs/）
+bash svc.sh start|stop|status|restart [gateway|user|product|cart|order|admin|chat|fe|web]
+svc.bat start|stop|status|restart [gateway|user|product|cart|order|admin|chat|fe|web]
+#    不带目标=全部 7 个后端；fe=购物端(7080) web=管理端(7090)
+#    额外 JVM 参数：SVC_JAVA_OPTS="-Dshop.order.pay-timeout-ms=15000"（如秒杀超时演示短 TTL）
+
+# 前端 dev
+cd shop-frontend  && npm run serve   # 7080，代理 /api → localhost:8080（网关）
+cd shop-admin-web  && npm run dev     # 7090
+npm run build                         # 生产构建（购物端需 VUE_APP_IMG_TARGET=/）
+
+# 数据库初始化 / Nacos 公共配置上传
+mysql -u root -p --default-character-set=utf8mb4 < sql/shop.sql
+NACOS_ADDR=localhost:8848 bash nacos-config-upload.sh
 ```
 
-## 实施阶段（详细方案见 plans/xmall-agent-mcp-agent-agent-misty-marble.md）
+最小验证清单：数据库初始化 → Nacos 配置上传 → `svc.sh start` 后 `status` 全 UP → 登录 admin/admin123 → 搜索（降级模式）→ 网关 401/403 越权抽查。
 
-P0 骨架+版本冒烟 → P1 JWT鉴权 → P2 秒杀闭环 → P3 ES搜索 → P4 Agent/MCP → P5 admin服务+React端 → P6 支付 → P7 部署打磨
+## 配置体系约定
 
-每阶段结束要有可验证产出（构建通过 + 核心链路 curl/页面验证），测试随代码走。
+- 服务特有配置留各自 application.yml；公共配置只进 `shop-common.yml`（改源文件 → 跑上传脚本 → 重启服务；配置中心是分发不是热更新）。
+- 环境变量：`NACOS_ADDR`（必填）、`NACOS_USERNAME/PASSWORD`、`DB_URL/DB_USERNAME/DB_PASSWORD`、`REDIS_HOST/PORT`、`MQ_HOST/PORT/USERNAME/PASSWORD`、`ES_URI/ES_ENABLED`、`DEEPSEEK_API_KEY`、`JWT_SECRET`（生产必换）、`CORS_ORIGINS`、`SPRING_PROFILES_ACTIVE`、`SVC_JAVA_OPTS`。
+- AI 对话使用 deepseek-chat，key 从环境变量 `DEEPSEEK_API_KEY` 注入。
+- 日志级别：root 默认 info（`LOG_LEVEL` 可调），业务包 `com.shop` 用 `SHOP_LOG_LEVEL=debug` 打开业务与 MyBatis SQL 日志。
+
+## 部署安全底线
+
+- 业务端口 8101~8106 **不对公网开放**（X-User-* header 信任边界在网关内），只暴露网关 8080 与 Nginx。
+- `JWT_SECRET` 生产必换；MCP 8106 加白名单或限内网访问。
+- Nginx 须剥外部伪造的 `X-User-*` header（与网关形成双保险）。
+- 详细部署步骤、验证清单与 FAQ 见 `deploy/README.md`。

@@ -48,18 +48,19 @@ nbdist/
 .DS_Store
 
 ######################################################################
-# 本地敏感配置（不入库）
+# 本地敏感配置
 **/application-local.yml
 application-local.yml
 **/bootstrap-local.yml
 .env*
 *.env.local
 
-# 隔离区：旧单体迁移副本/参考项目/旧构建产物（本地保留，不入库）
-.trash/
+
+# 启动脚本运行日志
+logs/
 
 ######################################################################
-# 前端依赖与构建产物（双前端 shop-frontend / shop-admin-web 兜底）
+# 前端依赖与构建产物
 **/node_modules/
 **/dist/
 **/.vite/

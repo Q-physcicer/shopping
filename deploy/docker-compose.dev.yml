@@ -6,7 +6,7 @@
 #   cd deploy && docker compose -f docker-compose.dev.yml up -d
 #   （只需要注册中心时：docker compose -f docker-compose.dev.yml up -d nacos）
 #
-# 服务器部署使用 docker-compose.server.yml（P7 交付，全套中间件）
+# 服务器部署不提供全套编排：按 deploy/README.md 第一节清单自备中间件
 # ============================================================
 
 services:
@@ -25,7 +25,7 @@ services:
       - nacos-data:/home/nacos/data
     restart: unless-stopped
 
-  # Elasticsearch 搜索（P3 启用；本地内存紧张可不启，搜索自动降级 MySQL）
+  # Elasticsearch 搜索（可选；本地内存紧张可不启，搜索自动降级 MySQL）
   elasticsearch:
     image: elasticsearch:8.14.3
     container_name: shop-es

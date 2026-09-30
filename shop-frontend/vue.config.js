@@ -8,8 +8,7 @@ module.exports = defineConfig({
     compress: false, // 关闭 gzip 压缩，避免 SSE 流式响应被缓冲
     proxy: {
       '/api': {
-        target: 'http://localhost:8080/', // 本地网关地址
-        // target: 'http://47.95.254.97:3000/', // 线上后端地址
+        target: 'http://localhost:8080/', // 网关地址（生产改为部署机地址或走 Nginx 反代）
         changeOrigin: true, // 允许跨域
         pathRewrite: {
           '^/api': ''
