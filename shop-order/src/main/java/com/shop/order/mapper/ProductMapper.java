@@ -14,6 +14,10 @@ public interface ProductMapper extends BaseMapper<Product> {
         @Select("select product_id from product")
         List<Integer> selectIds();
 
+        /** P10 乐观锁扣库存（原走 XML mybatis/ProductMapper.xml，XML 加载机制在当前运行环境失效，改注解 SQL 兜底） */
+        @org.apache.ibatis.annotations.Update("update product set product_num = product_num - #{saleNum}, " +
+                "version = version + 1, product_sales = product_sales + #{saleNum} " +
+                "where product_id = #{productId} and product_num >= #{saleNum} and version = #{currentVersion}")
         int updateStockByIdAndVersion(@Param("productId") Integer productId,
                                       @Param("saleNum") Integer saleNum,
                                       @Param("currentVersion") int currentVersion);

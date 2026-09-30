@@ -180,7 +180,7 @@ export default {
       // P0-6 新契约：只提交 productId/num/addressId，价格由服务端回查（防篡改）
       const body = {
         addressId: this.confirmAddress,
-        items: this.getCheckGoods.map(g => ({ productId: g.productId, num: g.num }))
+        items: this.getCheckGoods.map(g => ({ productId: g.productID, num: g.num }))
       };
       this.$axios
         .post("/api/order", body)
